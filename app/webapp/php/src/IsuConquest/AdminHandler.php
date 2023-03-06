@@ -18,13 +18,16 @@ use Slim\Exception\HttpBadRequestException;
 use Slim\Exception\HttpInternalServerErrorException;
 use Slim\Exception\HttpNotFoundException;
 use Slim\Exception\HttpUnauthorizedException;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final class AdminHandler
 {
     use Common;
 
     public function __construct(
-        private readonly PDO $db,
+        private readonly DatabaseManager $databaseManager,
+        private readonly HttpClientInterface $httpClient,
+        private readonly MasterCache $masterCache,
         private readonly Logger $logger,
     ) {
     }
@@ -55,7 +58,7 @@ final class AdminHandler
 
         $query = 'SELECT * FROM admin_sessions WHERE session_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->adminDatabase()->prepare($query);
             $stmt->execute([$sessID]);
             $row = $stmt->fetch();
         } catch (PDOException $e) {
@@ -75,7 +78,7 @@ final class AdminHandler
         if ($adminSession->expiredAt < $requestAt) {
             $query = 'UPDATE admin_sessions SET deleted_at=? WHERE session_id=?';
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->adminDatabase()->prepare($query);
                 $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
                 $stmt->bindValue(2, $sessID);
                 $stmt->execute();
@@ -107,11 +110,11 @@ final class AdminHandler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $this->db->beginTransaction();
+        $this->databaseManager->adminDatabase()->beginTransaction();
 
         $query = 'SELECT * FROM admin_users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->adminDatabase()->prepare($query);
             $stmt->bindValue(1, $req->userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -130,7 +133,7 @@ final class AdminHandler
 
         $query = 'UPDATE admin_users SET last_activated_at=?, updated_at=? WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->adminDatabase()->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(3, $req->userID, PDO::PARAM_INT);
@@ -142,7 +145,7 @@ final class AdminHandler
         // すでにあるsessionをdeleteにする
         $query = 'UPDATE admin_sessions SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->adminDatabase()->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $req->userID, PDO::PARAM_INT);
             $stmt->execute();
@@ -168,7 +171,7 @@ final class AdminHandler
 
         $query = 'INSERT INTO admin_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->adminDatabase()->prepare($query);
             $stmt->bindValue(1, $sess->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $sess->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $sess->sessionID);
@@ -180,7 +183,7 @@ final class AdminHandler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $this->db->commit();
+        $this->databaseManager->adminDatabase()->commit();
 
         return $this->successResponse($response, new AdminLoginResponse(
             adminSession: $sess,
@@ -204,7 +207,7 @@ final class AdminHandler
         // すでにあるsessionをdeleteにする
         $query = 'UPDATE admin_sessions SET deleted_at=? WHERE session_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->adminDatabase()->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $sessID);
             $stmt->execute();
@@ -224,7 +227,7 @@ final class AdminHandler
         /** @var list<VersionMaster> $masterVersions */
         $masterVersions = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM version_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM version_masters');
             while ($row = $stmt->fetch()) {
                 $masterVersions[] = VersionMaster::fromDBRow($row);
             }
@@ -235,7 +238,7 @@ final class AdminHandler
         /** @var list<ItemMaster> $items */
         $items = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM item_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM item_masters');
             while ($row = $stmt->fetch()) {
                 $items[] = ItemMaster::fromDBRow($row);
             }
@@ -246,7 +249,7 @@ final class AdminHandler
         /** @var list<GachaMaster> $gachas */
         $gachas = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM gacha_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM gacha_masters');
             while ($row = $stmt->fetch()) {
                 $gachas[] = GachaMaster::fromDBRow($row);
             }
@@ -257,7 +260,7 @@ final class AdminHandler
         /** @var list<GachaItemMaster> $gachaItems */
         $gachaItems = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM gacha_item_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM gacha_item_masters');
             while ($row = $stmt->fetch()) {
                 $gachaItems[] = GachaItemMaster::fromDBRow($row);
             }
@@ -268,7 +271,7 @@ final class AdminHandler
         /** @var list<PresentAllMaster> $presentAlls */
         $presentAlls = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM present_all_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM present_all_masters');
             while ($row = $stmt->fetch()) {
                 $presentAlls[] = PresentAllMaster::fromDBRow($row);
             }
@@ -279,7 +282,7 @@ final class AdminHandler
         /** @var list<LoginBonusMaster> $loginBonuses */
         $loginBonuses = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM login_bonus_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM login_bonus_masters');
             while ($row = $stmt->fetch()) {
                 $loginBonuses[] = LoginBonusMaster::fromDBRow($row);
             }
@@ -290,7 +293,7 @@ final class AdminHandler
         /** @var list<LoginBonusRewardMaster> $loginBonusRewards */
         $loginBonusRewards = [];
         try {
-            $stmt = $this->db->query('SELECT * FROM login_bonus_reward_masters');
+            $stmt = $this->databaseManager->adminDatabase()->query('SELECT * FROM login_bonus_reward_masters');
             while ($row = $stmt->fetch()) {
                 $loginBonusRewards[] = LoginBonusRewardMaster::fromDBRow($row);
             }
@@ -315,7 +318,37 @@ final class AdminHandler
      */
     public function adminUpdateMaster(Request $request, Response $response): Response
     {
-        $this->db->beginTransaction();
+        foreach ($this->databaseManager->getDbHosts() as $databaseHost) {
+            $responses[] = $this->httpClient->request(
+                'PUT',
+                "http://{$databaseHost}/admin/masterOne",
+                [
+                    'headers' => [
+                        'x-session' => $request->getHeader('x-session')[0]
+                    ],
+                    'body' => $request->getBody()->getContents()
+                ]
+            );
+        }
+        foreach ($responses as $adminResponse) {
+            $json = $adminResponse->getContent();
+        }
+
+        return $this->successResponse($response, new AdminUpdateMasterResponse(
+            versionMaster: new VersionMaster(...json_decode($json, true)['versionMaster']),
+        ));
+    }
+
+
+
+    /**
+     * adminUpdateMaster マスタデータ更新
+     * PUT /admin/masterOne
+     */
+    public function adminUpdateMasterOne(Request $request, Response $response): Response
+    {
+        $db = $this->databaseManager->connectDatabase($request->getUri()->getHost());
+        $db->beginTransaction();
         // version master
         try {
             $versionMasterRecs = $this->readFormFileToCSV($request, 'versionMaster');
@@ -344,7 +377,7 @@ final class AdminHandler
 
             $query = 'INSERT INTO version_masters(id, status, master_version) VALUES ' . implode(', ', $valuesClause) . ' ON DUPLICATE KEY UPDATE status=VALUES(status), master_version=VALUES(master_version)';
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(3 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(3 * $i + 2, $v['status'], PDO::PARAM_INT);
@@ -397,7 +430,7 @@ final class AdminHandler
                 'ON DUPLICATE KEY UPDATE item_type=VALUES(item_type), name=VALUES(name), description=VALUES(description), amount_per_sec=VALUES(amount_per_sec), max_level=VALUES(max_level), max_amount_per_sec=VALUES(max_amount_per_sec), base_exp_per_level=VALUES(base_exp_per_level), gained_exp=VALUES(gained_exp), shortening_min=VALUES(shortening_min)',
             ]);
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(10 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(10 * $i + 2, $v['item_type'], PDO::PARAM_INT);
@@ -453,7 +486,7 @@ final class AdminHandler
                 'ON DUPLICATE KEY UPDATE name=VALUES(name), start_at=VALUES(start_at), end_at=VALUES(end_at), display_order=VALUES(display_order), created_at=VALUES(created_at)',
             ]);
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(6 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(6 * $i + 2, $v['name']);
@@ -506,7 +539,7 @@ final class AdminHandler
                 'ON DUPLICATE KEY UPDATE name=VALUES(name), start_at=VALUES(start_at), end_at=VALUES(end_at), display_order=VALUES(display_order), created_at=VALUES(created_at)',
             ]);
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(7 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(7 * $i + 2, $v['gacha_id'], PDO::PARAM_INT);
@@ -561,7 +594,7 @@ final class AdminHandler
                 'ON DUPLICATE KEY UPDATE registered_start_at=VALUES(registered_start_at), registered_end_at=VALUES(registered_end_at), item_type=VALUES(item_type), item_id=VALUES(item_id), amount=VALUES(amount), present_message=VALUES(present_message), created_at=VALUES(created_at)',
             ]);
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(8 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(8 * $i + 2, $v['registered_start_at'], PDO::PARAM_INT);
@@ -619,7 +652,7 @@ final class AdminHandler
                 'ON DUPLICATE KEY UPDATE start_at=VALUES(start_at), end_at=VALUES(end_at), column_count=VALUES(column_count), looped=VALUES(looped), created_at=VALUES(created_at)',
             ]);
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(6 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(6 * $i + 2, $v['start_at'], PDO::PARAM_INT);
@@ -672,7 +705,7 @@ final class AdminHandler
                 'ON DUPLICATE KEY UPDATE login_bonus_id=VALUES(login_bonus_id), reward_sequence=VALUES(reward_sequence), item_type=VALUES(item_type), item_id=VALUES(item_id), amount=VALUES(amount), created_at=VALUES(created_at)',
             ]);
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $db->prepare($query);
                 foreach ($data as $i => $v) {
                     $stmt->bindValue(7 * $i + 1, $v['id'], PDO::PARAM_INT);
                     $stmt->bindValue(7 * $i + 2, $v['login_bonus_id'], PDO::PARAM_INT);
@@ -691,7 +724,7 @@ final class AdminHandler
         }
 
         try {
-            $row = $this->db->query('SELECT * FROM version_masters WHERE status=1')
+            $row = $db->query('SELECT * FROM version_masters WHERE status=1')
                 ->fetch();
         } catch (PDOException $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
@@ -701,8 +734,8 @@ final class AdminHandler
         }
         $activeMaster = VersionMaster::fromDBRow($row);
 
-        $this->db->commit();
-
+        $db->commit();
+        $this->masterCache->shouldRecache($db);
         return $this->successResponse($response, new AdminUpdateMasterResponse(
             versionMaster: $activeMaster,
         ));
@@ -746,9 +779,10 @@ final class AdminHandler
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
 
+        $targetDB = $this->databaseManager->selectDatabase($userID);
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -764,7 +798,7 @@ final class AdminHandler
         /** @var list<UserDevice> $devices */
         $devices = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -778,7 +812,7 @@ final class AdminHandler
         /** @var list<UserCard> $cards */
         $cards = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -792,7 +826,7 @@ final class AdminHandler
         /** @var list<UserDeck> $decks */
         $decks = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -806,7 +840,7 @@ final class AdminHandler
         /** @var list<UserItem> $items */
         $items = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -820,7 +854,7 @@ final class AdminHandler
         /** @var list<UserLoginBonus> $loginBonuses */
         $loginBonuses = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -834,7 +868,7 @@ final class AdminHandler
         /** @var list<UserPresent> $presents */
         $presents = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -848,7 +882,7 @@ final class AdminHandler
         /** @var list<UserPresentAllReceivedHistory> $presentHistory */
         $presentHistory = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -882,6 +916,7 @@ final class AdminHandler
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
 
+        $targetDB = $this->databaseManager->selectDatabase($userID);
         try {
             $requestAt = $this->getRequestTime($request);
         } catch (Exception $e) {
@@ -890,7 +925,7 @@ final class AdminHandler
 
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $userID);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -909,7 +944,7 @@ final class AdminHandler
         }
         $query = 'INSERT user_bans(id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE updated_at = ?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $targetDB->prepare($query);
             $stmt->bindValue(1, $banID, PDO::PARAM_INT);
             $stmt->bindValue(2, $userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $requestAt, PDO::PARAM_INT);

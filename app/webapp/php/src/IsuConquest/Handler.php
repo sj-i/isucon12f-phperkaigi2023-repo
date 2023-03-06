@@ -33,7 +33,7 @@ final class Handler
     private const SQL_DIRECTORY = __DIR__ . '/../../../sql/';
 
     public function __construct(
-        private readonly PDO $db,
+        private readonly DatabaseManager $databaseManager,
         private readonly Logger $logger,
         private readonly HttpClientInterface $httpClient,
         private readonly SettingsInterface $settings,
@@ -52,20 +52,20 @@ final class Handler
         }
         $request = $request->withAttribute('requestTime', $requestAt->getTimestamp());
 
+        try {
+            $userID = $this->getUserID($request);
+        } catch (\Throwable $e) {
+            $userID = 0;
+        }
         // マスタ確認
-        $masterVersion = $this->masterCache->shouldRecache();
+        $masterVersion = $this->masterCache->shouldRecache($this->databaseManager->selectDatabase($userID));
 
         if (!$request->hasHeader('x-master-version') || $masterVersion !== $request->getHeader('x-master-version')[0]) {
             throw new HttpException($request, $this->errInvalidMasterVersion, StatusCodeInterface::STATUS_UNPROCESSABLE_ENTITY);
         }
 
         // check ban
-        try {
-            $userID = $this->getUserID($request);
-        } catch (RuntimeException) {
-            $userID = null;
-        }
-        if (!is_null($userID) && $userID !== 0) {
+        if ($userID !== 0) {
             try {
                 $isBan = $this->checkBan($userID);
             } catch (PDOException $e) {
@@ -104,7 +104,7 @@ final class Handler
 
         $query = 'SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->execute([$sessID]);
             $row = $stmt->fetch();
         } catch (PDOException $e) {
@@ -122,7 +122,7 @@ final class Handler
         if ($userSession->expiredAt < $requestAt) {
             $query = 'UPDATE user_sessions SET deleted_at=? WHERE session_id=?';
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
                 $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
                 $stmt->execute();
             } catch (PDOException $e) {
@@ -141,10 +141,10 @@ final class Handler
      * @throws PDOException
      * @throws RuntimeException
      */
-    private function checkOneTimeToken(string $token, int $tokenType, int $requestAt): void
+    private function checkOneTimeToken(int $userID, string $token, int $tokenType, int $requestAt): void
     {
         $query = 'SELECT * FROM user_one_time_tokens WHERE token=? AND token_type=? AND deleted_at IS NULL';
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $token);
         $stmt->bindValue(2, $tokenType, PDO::PARAM_INT);
         $stmt->execute();
@@ -156,7 +156,7 @@ final class Handler
 
         if ($tk->expiredAt < $requestAt) {
             $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE token=?';
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $token);
             $stmt->execute();
@@ -165,7 +165,7 @@ final class Handler
 
         // 使ったトークンを失効する
         $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE token=?';
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
         $stmt->bindValue(2, $token);
         $stmt->execute();
@@ -181,7 +181,7 @@ final class Handler
     {
         $query = 'SELECT * FROM user_devices WHERE user_id=? AND platform_id=?';
 
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $userID, PDO::PARAM_INT);
         $stmt->bindValue(2, $viewerID);
         $stmt->execute();
@@ -198,7 +198,7 @@ final class Handler
     private function checkBan(int $userID): bool
     {
         $query = 'SELECT * FROM user_bans WHERE user_id=?';
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $userID, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch();
@@ -219,7 +219,7 @@ final class Handler
     private function loginProcess(int $userID, int $requestAt): array
     {
         $query = 'SELECT * FROM users WHERE id=?';
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $userID, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch();
@@ -234,7 +234,7 @@ final class Handler
         // 全員プレゼント取得
         $allPresents = $this->obtainPresent($userID, $requestAt);
 
-        $stmt = $this->db->prepare('SELECT isu_coin FROM users WHERE id=?');
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare('SELECT isu_coin FROM users WHERE id=?');
         $stmt->bindValue(1, $user->id, PDO::PARAM_INT);
         $stmt->execute();
         $isuCoin = $stmt->fetchColumn();
@@ -247,7 +247,7 @@ final class Handler
         $user->lastActivatedAt = $requestAt;
 
         $query = 'UPDATE users SET updated_at=?, last_activated_at=? WHERE id=?';
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
         $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
         $stmt->bindValue(3, $userID, PDO::PARAM_INT);
@@ -283,7 +283,7 @@ final class Handler
             $initBonus = false;
             // ボーナスの進捗取得
             $query = 'SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?';
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->bindValue(2, $bonus->id, PDO::PARAM_INT);
             $stmt->execute();
@@ -329,7 +329,7 @@ final class Handler
             // 進捗の保存
             if ($initBonus) {
                 $query = 'INSERT INTO user_login_bonuses(id, user_id, login_bonus_id, last_reward_sequence, loop_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
                 $stmt->bindValue(1, $userBonus->id, PDO::PARAM_INT);
                 $stmt->bindValue(2, $userBonus->userID, PDO::PARAM_INT);
                 $stmt->bindValue(3, $userBonus->loginBonusID, PDO::PARAM_INT);
@@ -340,7 +340,7 @@ final class Handler
                 $stmt->execute();
             } else {
                 $query = 'UPDATE user_login_bonuses SET last_reward_sequence=?, loop_count=?, updated_at=? WHERE id=?';
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
                 $stmt->bindValue(1, $userBonus->lastRewardSequence, PDO::PARAM_INT);
                 $stmt->bindValue(2, $userBonus->loopCount, PDO::PARAM_INT);
                 $stmt->bindValue(3, $userBonus->updatedAt, PDO::PARAM_INT);
@@ -372,7 +372,7 @@ final class Handler
             $ids[] = $np->id;
         }
         $ids_placeholder = implode(',', array_fill(0, count($ids), '?'));
-        $stmt = $this->db->prepare("SELECT present_all_id FROM user_present_all_received_history WHERE user_id=? AND present_all_id IN ({$ids_placeholder})");
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare("SELECT present_all_id FROM user_present_all_received_history WHERE user_id=? AND present_all_id IN ({$ids_placeholder})");
         foreach ([$userID, ...$ids] as $index => $value) {
             $stmt->bindValue($index + 1, $value, PDO::PARAM_INT);
         }
@@ -418,7 +418,7 @@ final class Handler
         if (count($obtainPresents)) {
             $placeholder = implode(',', array_fill(0, count($obtainPresents), '(?, ?, ?, ?, ?, ?, ?, ?, ?)'));
             $query = 'INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES' . $placeholder . ';';
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $position = 1;
             foreach ($obtainPresents as $obtainPresent) {
                 $stmt->bindValue($position++, $obtainPresent->id, PDO::PARAM_INT);
@@ -437,7 +437,7 @@ final class Handler
         if (count($histories)) {
             $placeholder = implode(',', array_fill(0, count($histories), '(?, ?, ?, ?, ?, ?)'));
             $query = 'INSERT INTO user_present_all_received_history(id, user_id, present_all_id, received_at, created_at, updated_at) VALUES ' . $placeholder  . ';';
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $position = 1;
             foreach ($histories as $history) {
                 $stmt->bindValue($position++, $history->id, PDO::PARAM_INT);
@@ -456,7 +456,7 @@ final class Handler
     private function obtainCoin(int $userID, int $obtainAmount): void
     {
         $query = 'UPDATE users SET isu_coin=isu_coin+? WHERE id=?';
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $obtainAmount, PDO::PARAM_INT);
         $stmt->bindValue(2, $userID, PDO::PARAM_INT);
         $stmt->execute();
@@ -492,7 +492,7 @@ final class Handler
         }
         $placeholders = implode(',', array_fill(0, count($cards), '(?, ?, ?, ?, ?, ?, ?, ?)'));
         $query = 'INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES ' . $placeholders;
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $position = 1;
         foreach ($cards as $card) {
             $stmt->bindValue($position++, $card->id, PDO::PARAM_INT);
@@ -519,7 +519,7 @@ final class Handler
         }
         $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
         $query = "SELECT * FROM user_items WHERE user_id=? AND item_id IN ({$placeholders})";
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
         $stmt->bindValue(1, $userID, PDO::PARAM_INT);
         $position = 2;
         foreach ($itemIds as $itemId) {
@@ -560,7 +560,7 @@ final class Handler
         if ($bulkUpserts) {
             $placeholders = implode(',', array_fill(0, count($bulkUpserts), '(?, ?, ?, ?, ?, ?, ?)'));
             $query = 'INSERT INTO user_items (id, user_id, item_type, item_id, amount, created_at, updated_at) VALUES ' . $placeholders .' ON DUPLICATE KEY UPDATE id = VALUES(id), user_id = VALUES(user_id), item_type = VALUES(item_type), item_id = VALUES(item_id), amount = VALUES(amount), created_at = VALUES(created_at), updated_at = VALUES(updated_at)';
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $position = 1;
             foreach ($bulkUpserts as $uitem) {
                 $stmt->bindValue($position++, $uitem->id, PDO::PARAM_INT);
@@ -610,13 +610,23 @@ final class Handler
      */
     public function initialize(Request $request, Response $response): Response
     {
-        $database_host = $this->settings->get('database')['host'];
-        if ($database_host !== $request->getUri()->getHost()) {
-            $this->httpClient->request('POST', "http://{$database_host}/initialize");
-            return $this->successResponse($response, new InitializeResponse(
-                language: 'php',
-            ));
+        $responses = [];
+        foreach ($this->databaseManager->getDbHosts() as $databaseHost) {
+            $responses[] = $this->httpClient->request('POST', "http://{$databaseHost}/initializeOne");
         }
+        foreach ($responses as $responseFromDb) {
+            $responseFromDb->getContent();
+        }
+        return $this->successResponse($response, new InitializeResponse(
+            language: 'php',
+        ));
+    }
+    /**
+     * initializeOne 初期化処理
+     * POST /initializeOne
+     */
+    public function initializeOne(Request $request, Response $response): Response
+    {
         $fp = fopen('php://temp', 'w+');
         $descriptorSpec = [
             1 => $fp,
@@ -633,7 +643,8 @@ final class Handler
             $out = stream_get_contents($fp);
             throw new HttpInternalServerErrorException($request, sprintf('Failed to initialize: %s', $out));
         }
-        $this->masterCache->shouldRecache();
+
+        $this->masterCache->shouldRecache($this->databaseManager->adminDatabase());
 
         return $this->successResponse($response, new InitializeResponse(
             language: 'php',
@@ -663,14 +674,15 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $this->db->beginTransaction();
-
-        // ユーザ作成
         try {
             $uID = $this->generateID();
         } catch (Exception $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
+
+        $this->databaseManager->selectDatabase($uID)->beginTransaction();
+
+        // ユーザ作成
         $user = new User(
             id: $uID,
             isuCoin: 0,
@@ -682,7 +694,7 @@ final class Handler
         );
         $query = 'INSERT INTO users(id, last_activated_at, registered_at, last_getreward_at, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($uID)->prepare($query);
             $stmt->bindValue(1, $user->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $user->lastActivatedAt, PDO::PARAM_INT);
             $stmt->bindValue(3, $user->registeredAt, PDO::PARAM_INT);
@@ -709,7 +721,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_devices(id, user_id, platform_id, platform_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($uID)->prepare($query);
             $stmt->bindValue(1, $userDevice->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $user->id, PDO::PARAM_INT);
             $stmt->bindValue(3, $req->viewerID);
@@ -750,7 +762,7 @@ final class Handler
         $placeholders = implode(',', array_fill(0, count($initCards), '(?, ?, ?, ?, ?, ?, ?, ?)'));
         $query = 'INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES ' . $placeholders;
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($uID)->prepare($query);
             $position = 1;
             foreach ($initCards as $card) {
                 $stmt->bindValue($position++, $card->id, PDO::PARAM_INT);
@@ -783,7 +795,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_decks(id, user_id, user_card_id_1, user_card_id_2, user_card_id_3, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($uID)->prepare($query);
             $stmt->bindValue(1, $initDeck->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $initDeck->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $initDeck->cardID1, PDO::PARAM_INT);
@@ -826,7 +838,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($uID)->prepare($query);
             $stmt->bindValue(1, $sess->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $sess->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $sess->sessionID);
@@ -838,7 +850,7 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $this->db->commit();
+        $this->databaseManager->selectDatabase($uID)->commit();
 
         return $this->successResponse($response, new CreateUserResponse(
             userID: $user->id,
@@ -869,7 +881,7 @@ final class Handler
 
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($req->userID)->prepare($query);
             $stmt->bindValue(1, $req->userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -902,12 +914,12 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $err, $e);
         }
 
-        $this->db->beginTransaction();
+        $this->databaseManager->selectDatabase($user->id)->beginTransaction();
 
         // sessionを更新
         $query = 'UPDATE user_sessions SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($user->id)->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $req->userID, PDO::PARAM_INT);
             $stmt->execute();
@@ -930,7 +942,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($user->id)->prepare($query);
             $stmt->bindValue(1, $sess->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $sess->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $sess->sessionID);
@@ -949,7 +961,7 @@ final class Handler
 
             $query = 'UPDATE users SET updated_at=?, last_activated_at=? WHERE id=?';
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->selectDatabase($user->id)->prepare($query);
                 $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
                 $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
                 $stmt->bindValue(3, $req->userID, PDO::PARAM_INT);
@@ -957,7 +969,7 @@ final class Handler
                 throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
             }
 
-            $this->db->commit();
+            $this->databaseManager->selectDatabase($user->id)->commit();
 
             return $this->successResponse($response, new LoginResponse(
                 viewerID: $req->viewerID,
@@ -979,7 +991,7 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $err, $e);
         }
 
-        $this->db->commit();
+        $this->databaseManager->selectDatabase($user->id)->commit();
 
         return $this->successResponse($response, new LoginResponse(
             viewerID: $req->viewerID,
@@ -1037,7 +1049,7 @@ final class Handler
         // generate one time token
         $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $userID, PDO::PARAM_INT);
             $stmt->execute();
@@ -1061,7 +1073,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_one_time_tokens(id, user_id, token, token_type, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $token->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $token->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $token->token);
@@ -1120,7 +1132,7 @@ final class Handler
         }
 
         try {
-            $this->checkOneTimeToken($req->oneTimeToken, 1, $requestAt);
+            $this->checkOneTimeToken($userID, $req->oneTimeToken, 1, $requestAt);
         } catch (Exception $e) {
             $err = $e->getMessage();
             if ($err === $this->errInvalidToken) {
@@ -1144,7 +1156,7 @@ final class Handler
         // userのisuconが足りるか
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -1193,7 +1205,7 @@ final class Handler
             }
         }
 
-        $this->db->beginTransaction();
+        $this->databaseManager->selectDatabase($userID)->beginTransaction();
 
         // 直付与 => プレゼントに入れる
         /** @var list<UserPresent> $presents */
@@ -1222,7 +1234,7 @@ final class Handler
         $placeholders = implode(',', array_fill(0, count($presents), '(?, ?, ?, ?, ?, ?, ?, ?, ?)'));
         $query = 'INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES ' . $placeholders;
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $position = 1;
             foreach ($presents as $present) {
                 $stmt->bindValue($position++, $present->id, PDO::PARAM_INT);
@@ -1244,7 +1256,7 @@ final class Handler
         $query = 'UPDATE users SET isu_coin=? WHERE id=?';
         $totalCoin = $user->isuCoin - $consumedCoin;
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $totalCoin, PDO::PARAM_INT);
             $stmt->bindValue(2, $userID, PDO::PARAM_INT);
             $stmt->execute();
@@ -1252,7 +1264,7 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $this->db->commit();
+        $this->databaseManager->selectDatabase($userID)->commit();
 
         return $this->successResponse($response, new DrawGachaResponse(
             presents: $presents,
@@ -1290,7 +1302,7 @@ final class Handler
             LIMIT ? OFFSET ?
         SQL;
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->bindValue(2, self::PRESENT_COUNT_PER_PAGE + 1, PDO::PARAM_INT);
             $stmt->bindValue(3, $offset, PDO::PARAM_INT);
@@ -1358,7 +1370,7 @@ final class Handler
         /** @var list<UserPresent> $obtainPresent */
         $obtainPresent = [];
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             foreach ($req->presentIDs as $i => $presentID) {
                 $stmt->bindValue($i + 1, $presentID, PDO::PARAM_INT);
             }
@@ -1375,7 +1387,7 @@ final class Handler
             ));
         }
 
-        $this->db->beginTransaction();
+        $this->databaseManager->selectDatabase($userID)->beginTransaction();
         // 配布処理
         $presentIDs = [];
         $coinAmount = 0;
@@ -1400,7 +1412,7 @@ final class Handler
             $placeholders = implode(',', array_fill(0, count($presentIDs), '?'));
             $query = "UPDATE user_presents SET deleted_at=?, updated_at=? WHERE id IN ({$placeholders})";
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
                 $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
                 $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
                 $position = 3;
@@ -1417,7 +1429,7 @@ final class Handler
         }
 
 
-        $this->db->commit();
+        $this->databaseManager->selectDatabase($userID)->commit();
 
         return $this->successResponse($response, new ReceivePresentResponse(
             updatedResources: new UpdatedResource($requestAt, null, null, null, null, null, null, $obtainPresent),
@@ -1444,7 +1456,7 @@ final class Handler
 
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -1460,7 +1472,7 @@ final class Handler
         $itemList = [];
         $query = 'SELECT * FROM user_items WHERE user_id = ?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -1474,7 +1486,7 @@ final class Handler
         $cardList = [];
         $query = 'SELECT * FROM user_cards WHERE user_id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -1487,7 +1499,7 @@ final class Handler
         // generate one time token
         $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $userID, PDO::PARAM_INT);
             $stmt->execute();
@@ -1511,7 +1523,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_one_time_tokens(id, user_id, token, token_type, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $token->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $token->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $token->token);
@@ -1564,7 +1576,7 @@ final class Handler
         }
 
         try {
-            $this->checkOneTimeToken($req->oneTimeToken, 2, $requestAt);
+            $this->checkOneTimeToken($userID, $req->oneTimeToken, 2, $requestAt);
         } catch (Exception $e) {
             $err = $e->getMessage();
             if ($err === $this->errInvalidToken) {
@@ -1591,7 +1603,7 @@ final class Handler
             WHERE uc.id = ? AND uc.user_id=?
         SQL;
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $cardID, PDO::PARAM_INT);
             $stmt->bindValue(2, $userID, PDO::PARAM_INT);
             $stmt->execute();
@@ -1618,7 +1630,7 @@ final class Handler
             WHERE ui.item_type = 3 AND ui.id=? AND ui.user_id=?
         SQL;
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             foreach ($req->items as $v) {
                 $stmt->bindValue(1, $v->id, PDO::PARAM_INT);
                 $stmt->bindValue(2, $userID, PDO::PARAM_INT);
@@ -1657,12 +1669,12 @@ final class Handler
             $card->amountPerSec += ($card->maxAmountPerSec - $card->baseAmountPerSec) / ($card->maxLevel - 1);
         }
 
-        $this->db->beginTransaction();
+        $this->databaseManager->selectDatabase($userID)->beginTransaction();
 
         // cardのlvと経験値の更新、itemの消費
         $query = 'UPDATE user_cards SET amount_per_sec=?, level=?, total_exp=?, updated_at=? WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $card->amountPerSec, PDO::PARAM_INT);
             $stmt->bindValue(2, $card->level, PDO::PARAM_INT);
             $stmt->bindValue(3, $card->totalExp, PDO::PARAM_INT);
@@ -1675,7 +1687,7 @@ final class Handler
 
         $query = 'UPDATE user_items SET amount=?, updated_at=? WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             foreach ($items as $v) {
                 $stmt->bindValue(1, $v->amount - $v->consumeAmount, PDO::PARAM_INT);
                 $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
@@ -1689,7 +1701,7 @@ final class Handler
         // get response data
         $query = 'SELECT * FROM user_cards WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $cardID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -1714,7 +1726,7 @@ final class Handler
             );
         }
 
-        $this->db->commit();
+        $this->databaseManager->selectDatabase($userID)->commit();
 
         return $this->successResponse($response, new AddExpToCardResponse(
             updatedResources: new UpdatedResource($requestAt, null, null, [$resultCard], null, $resultItems, null, null),
@@ -1765,7 +1777,7 @@ final class Handler
         $cards = [];
         $query = 'SELECT * FROM user_cards WHERE id IN (?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $req->cardIDs[0], PDO::PARAM_INT);
             $stmt->bindValue(2, $req->cardIDs[1], PDO::PARAM_INT);
             $stmt->bindValue(3, $req->cardIDs[2], PDO::PARAM_INT);
@@ -1780,12 +1792,12 @@ final class Handler
             throw new HttpBadRequestException($request, 'invalid card ids');
         }
 
-        $this->db->beginTransaction();
+        $this->databaseManager->selectDatabase($userID)->beginTransaction();
 
         // update data
         $query = 'UPDATE user_decks SET updated_at=?, deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
             $stmt->bindValue(3, $userID, PDO::PARAM_INT);
@@ -1810,7 +1822,7 @@ final class Handler
         );
         $query = 'INSERT INTO user_decks(id, user_id, user_card_id_1, user_card_id_2, user_card_id_3, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $newDeck->id, PDO::PARAM_INT);
             $stmt->bindValue(2, $newDeck->userID, PDO::PARAM_INT);
             $stmt->bindValue(3, $newDeck->cardID1, PDO::PARAM_INT);
@@ -1823,7 +1835,7 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $this->db->commit();
+        $this->databaseManager->selectDatabase($userID)->commit();
 
         return $this->successResponse($response, new UpdateDeckResponse(
             updatedResources: new UpdatedResource($requestAt, null, null, null, [$newDeck], null, null, null),
@@ -1868,7 +1880,7 @@ final class Handler
         // 最後に取得した報酬時刻取得
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -1883,7 +1895,7 @@ final class Handler
         // 使っているデッキの取得
         $query = 'SELECT * FROM user_decks WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -1899,7 +1911,7 @@ final class Handler
         $cards = [];
         $query = 'SELECT * FROM user_cards WHERE id IN (?, ?, ?)';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $deck->cardID1, PDO::PARAM_INT);
             $stmt->bindValue(2, $deck->cardID2, PDO::PARAM_INT);
             $stmt->bindValue(3, $deck->cardID3, PDO::PARAM_INT);
@@ -1924,7 +1936,7 @@ final class Handler
 
         $query = 'UPDATE users SET isu_coin=?, last_getreward_at=? WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $user->isuCoin, PDO::PARAM_INT);
             $stmt->bindValue(2, $user->lastGetRewardAt, PDO::PARAM_INT);
             $stmt->bindValue(3, $user->id, PDO::PARAM_INT);
@@ -1960,7 +1972,7 @@ final class Handler
         $deck = null;
         $query = 'SELECT * FROM user_decks WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();
@@ -1977,7 +1989,7 @@ final class Handler
         if (!is_null($deck)) {
             $query = 'SELECT * FROM user_cards WHERE id IN (?, ?, ?)';
             try {
-                $stmt = $this->db->prepare($query);
+                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
                 $stmt->bindValue(1, $deck->cardID1, PDO::PARAM_INT);
                 $stmt->bindValue(2, $deck->cardID2, PDO::PARAM_INT);
                 $stmt->bindValue(3, $deck->cardID3, PDO::PARAM_INT);
@@ -1997,7 +2009,7 @@ final class Handler
         // 経過時間
         $query = 'SELECT * FROM users WHERE id=?';
         try {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
             $stmt->execute();
             $row = $stmt->fetch();

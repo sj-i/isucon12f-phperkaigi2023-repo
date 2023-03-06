@@ -17,6 +17,7 @@ return function (App $app) {
 
     // utility
     $app->post('/initialize', Handler::class . ':initialize');
+    $app->post('/initializeOne', Handler::class . ':initializeOne');
     $app->get('/health', Handler::class . ':health');
     $app->get('/test', Handler::class . ':test');
 
@@ -44,6 +45,7 @@ return function (App $app) {
             $adminAuthAPI->delete('/admin/logout', AdminHandler::class . ':adminLogout');
             $adminAuthAPI->get('/admin/master', AdminHandler::class . ':adminListMaster');
             $adminAuthAPI->put('/admin/master', AdminHandler::class . ':adminUpdateMaster');
+            $adminAuthAPI->put('/admin/masterOne', AdminHandler::class . ':adminUpdateMasterOne');
             $adminAuthAPI->get('/admin/user/{userID}', AdminHandler::class . ':adminUser');
             $adminAuthAPI->post('/admin/user/{userID}/ban', AdminHandler::class . ':adminBanUser');
         })->add(AdminHandler::class . ':adminSessionCheckMiddleware');
