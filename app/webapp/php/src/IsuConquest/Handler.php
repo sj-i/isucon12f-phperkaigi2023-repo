@@ -504,6 +504,54 @@ final class Handler
         $stmt->execute();
     }
 
+    private function obtainCards(int $userID, int $requestAt, array $itemIDs): void
+    {
+        if (!count($itemIDs)) {
+            return;
+        }
+        $placeholders = implode(',', array_fill(0, count($itemIDs), '?'));
+        $query = "SELECT * FROM item_masters WHERE id IN ({$placeholders}) AND item_type=2";
+        $stmt = $this->db->prepare($query);
+        $position = 1;
+        foreach ($itemIDs as $itemID) {
+            $stmt->bindValue($position++, $itemID, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $cards = [];
+        while ($row = $stmt->fetch()) {
+            $item = ItemMaster::fromDBRow($row);
+            $cID = $this->generateID();
+            $cards[] = new UserCard(
+                id: $cID,
+                userID: $userID,
+                cardID: $item->id,
+                amountPerSec: $item->amountPerSec,
+                level: 1,
+                totalExp: 0,
+                createdAt: $requestAt,
+                updatedAt: $requestAt,
+            );
+        }
+        if (count($cards) !== count($itemIDs)) {
+            throw new RuntimeException($this->errItemNotFound);
+        }
+        $placeholders = implode('', array_fill(0, count($cards), '(?, ?, ?, ?, ?, ?, ?, ?)'));
+        $query = 'INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES ' . $placeholders;
+        $stmt = $this->db->prepare($query);
+        $position = 1;
+        foreach ($cards as $card) {
+            $stmt->bindValue($position++, $card->id, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->userID, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->cardID, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->amountPerSec, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->level, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->totalExp, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->createdAt, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $card->updatedAt, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+    }
+
     /**
      * obtainItem アイテム付与処理
      *
@@ -518,39 +566,8 @@ final class Handler
                 return;
 
             case 2: // card(ハンマー)
-                $query = 'SELECT * FROM item_masters WHERE id=? AND item_type=?';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $itemID, PDO::PARAM_INT);
-                $stmt->bindValue(2, $itemType, PDO::PARAM_INT);
-                $stmt->execute();
-                $row = $stmt->fetch();
-                if ($row === false) {
-                    throw new RuntimeException($this->errItemNotFound);
-                }
-                $item = ItemMaster::fromDBRow($row);
-                $cID = $this->generateID();
-                $card = new UserCard(
-                    id: $cID,
-                    userID: $userID,
-                    cardID: $item->id,
-                    amountPerSec: $item->amountPerSec,
-                    level: 1,
-                    totalExp: 0,
-                    createdAt: $requestAt,
-                    updatedAt: $requestAt,
-                );
-                $query = 'INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $card->id, PDO::PARAM_INT);
-                $stmt->bindValue(2, $card->userID, PDO::PARAM_INT);
-                $stmt->bindValue(3, $card->cardID, PDO::PARAM_INT);
-                $stmt->bindValue(4, $card->amountPerSec, PDO::PARAM_INT);
-                $stmt->bindValue(5, $card->level, PDO::PARAM_INT);
-                $stmt->bindValue(6, $card->totalExp, PDO::PARAM_INT);
-                $stmt->bindValue(7, $card->createdAt, PDO::PARAM_INT);
-                $stmt->bindValue(8, $card->updatedAt, PDO::PARAM_INT);
-                $stmt->execute();
-                break;
+                $this->obtainCards($userID, $requestAt, [$itemID]);
+                return;
 
             case 3:
             case 4: // 強化素材
@@ -1443,6 +1460,7 @@ final class Handler
         $receivedIDs = [];
         // 配布処理
         $coinAmount = 0;
+        $cardIDs = [];
         for ($i = 0; $i < count($obtainPresent); $i++) {
             $receivedIDs[] = $obtainPresent[$i]->id;
 
@@ -1453,21 +1471,25 @@ final class Handler
             $obtainPresent[$i]->updatedAt = $requestAt;
             $obtainPresent[$i]->deletedAt = $requestAt;
             $v = $obtainPresent[$i];
-            if ($v->itemType === 1) {
-                $coinAmount += $v->amount;
-                continue;
-            }
-
-            try {
-                $this->obtainItem($v->userID, $v->itemID, $v->itemType, $v->amount, $requestAt);
-            } catch (Exception $e) {
-                $err = $e->getMessage();
-                if ($err === $this->errUserNotFound || $err === $this->errItemNotFound) {
-                    throw new HttpNotFoundException($request, $err, $e);
-                } elseif ($err === $this->errInvalidItemType) {
-                    throw new HttpBadRequestException($request, $err, $e);
-                }
-                throw new HttpInternalServerErrorException($request, $err, $e);
+            switch ($v->itemType) {
+                case 1:
+                    $coinAmount += $v->amount;
+                break;
+                case 2:
+                    $cardIDs[] = $v->itemID;
+                break;
+                default:
+                    try {
+                        $this->obtainItem($v->userID, $v->itemID, $v->itemType, $v->amount, $requestAt);
+                    } catch (Exception $e) {
+                        $err = $e->getMessage();
+                        if ($err === $this->errUserNotFound || $err === $this->errItemNotFound) {
+                            throw new HttpNotFoundException($request, $err, $e);
+                        } elseif ($err === $this->errInvalidItemType) {
+                            throw new HttpBadRequestException($request, $err, $e);
+                        }
+                        throw new HttpInternalServerErrorException($request, $err, $e);
+                    }
             }
         }
         $placeholders = implode(',', array_fill(0, count($receivedIDs), '?'));
@@ -1486,6 +1508,7 @@ final class Handler
         }
 
         $this->obtainCoin($userID, $coinAmount);
+        $this->obtainCards($userID, $requestAt, $cardIDs);
 
         $this->db->commit();
 
