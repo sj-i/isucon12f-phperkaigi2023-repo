@@ -2,10 +2,7 @@
 
 namespace App\IsuConquest;
 use PDO;
-use Symfony\Component\Cache\Adapter\FilesystemAdapter;
-use Symfony\Component\Cache\Adapter\PhpArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
-use Symfony\Component\Cache\CacheItem;
 
 class MasterCache
 {
@@ -19,7 +16,13 @@ class MasterCache
     private array $gachaMastersCache = [];
 
     /** @var array[] */
-    private array $gachaItmMastersCache = [];
+    private array $gachaItemMastersCache = [];
+
+    /** @var array[] */
+    private array $presentAllMastersCache = [];
+
+    /** @var array[] */
+    private array $loginBonusRewardMastersCache = [];
 
     private readonly PhpFilesAdapter $cache;
 
@@ -71,6 +74,18 @@ class MasterCache
             $this->cache->getItem('gacha_item_masters')
                 ->set(
                     $this->db->query('SELECT * FROM gacha_item_masters ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
+        $this->cache->saveDeferred(
+            $this->cache->getItem('present_all_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM present_all_masters')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
+        $this->cache->saveDeferred(
+            $this->cache->getItem('login_bonus_reward_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM login_bonus_reward_masters')->fetchAll(PDO::FETCH_ASSOC)
                 )
         );
     }
@@ -132,15 +147,46 @@ class MasterCache
     /** @return GachaItemMaster[] */
     public function getGachaItemMasterByID(int $id): array
     {
-        if (!$this->gachaItmMastersCache) {
-            $this->gachaItmMastersCache = $this->cache->getItem('gacha_item_masters')->get();
+        if (!$this->gachaItemMastersCache) {
+            $this->gachaItemMastersCache = $this->cache->getItem('gacha_item_masters')->get();
         }
         $result = [];
-        foreach ($this->gachaItmMastersCache as $gachaItemMaster) {
+        foreach ($this->gachaItemMastersCache as $gachaItemMaster) {
             if ($gachaItemMaster['gacha_id'] === $id) {
                 $result[] = GachaItemMaster::fromDBRow($gachaItemMaster);
             }
         }
         return $result;
     }
+
+    /** @return PresentAllMaster[] */
+    public function getPresentAllMaster(int $requestAt): array
+    {
+        if (!$this->presentAllMastersCache) {
+            $this->presentAllMastersCache = $this->cache->getItem('present_all_masters')->get();
+        }
+
+        $result = [];
+        foreach ($this->presentAllMastersCache as $presentAllMaster) {
+            if ($presentAllMaster['registered_start_at'] <= $requestAt and $requestAt <= $presentAllMaster['registered_end_at']) {
+                $result[] = PresentAllMaster::fromDBRow($presentAllMaster);
+            }
+        }
+        return $result;
+    }
+
+    public function getLoginBonusRewardMasterByIDAndSequence(int $loginBonusID, int $rewardSequence): ?LoginBonusRewardMaster
+    {
+        if (!$this->loginBonusRewardMastersCache) {
+            $this->loginBonusRewardMastersCache = $this->cache->getItem('login_bonus_reward_masters')->get();
+        }
+
+        foreach ($this->loginBonusRewardMastersCache as $loginBonusRewardMaster) {
+            if ($loginBonusRewardMaster['login_bonus_id'] === $loginBonusID and $loginBonusRewardMaster['reward_sequence'] === $rewardSequence) {
+                return LoginBonusRewardMaster::fromDBRow($loginBonusRewardMaster);
+            }
+        }
+        return null;
+    }
 }
+

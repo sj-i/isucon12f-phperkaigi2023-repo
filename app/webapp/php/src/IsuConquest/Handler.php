@@ -319,16 +319,10 @@ final class Handler
             $userBonus->updatedAt = $requestAt;
 
             // 今回付与するリソース取得
-            $query = 'SELECT * FROM login_bonus_reward_masters WHERE login_bonus_id=? AND reward_sequence=?';
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $bonus->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $userBonus->lastRewardSequence, PDO::PARAM_INT);
-            $stmt->execute();
-            $row = $stmt->fetch();
-            if ($row === false) {
+            $rewardItem = $this->masterCache->getLoginBonusRewardMasterByIDAndSequence($bonus->id, $userBonus->lastRewardSequence);
+            if (is_null($rewardItem)) {
                 throw new RuntimeException($this->errLoginBonusRewardNotFound);
             }
-            $rewardItem = LoginBonusRewardMaster::fromDBRow($row);
 
             $this->obtainItem($userID, $rewardItem->itemID, $rewardItem->itemType, $rewardItem->amount, $requestAt);
 
@@ -370,15 +364,7 @@ final class Handler
     private function obtainPresent(int $userID, int $requestAt): array
     {
         /** @var list<PresentAllMaster> $normalPresents */
-        $normalPresents = [];
-        $query = 'SELECT * FROM present_all_masters WHERE registered_start_at <= ? AND registered_end_at >= ?';
-        $stmt = $this->db->prepare($query);
-        $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-        $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
-        $stmt->execute();
-        while ($row = $stmt->fetch()) {
-            $normalPresents[] = PresentAllMaster::fromDBRow($row);
-        }
+        $normalPresents = $this->masterCache->getPresentAllMaster($requestAt);
 
         // 全員プレゼント取得情報更新
         $ids = [];
