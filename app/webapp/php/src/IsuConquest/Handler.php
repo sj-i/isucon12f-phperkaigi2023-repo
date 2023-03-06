@@ -1436,9 +1436,11 @@ final class Handler
         }
 
         $this->db->beginTransaction();
-
+        $receivedIDs = [];
         // 配布処理
         for ($i = 0; $i < count($obtainPresent); $i++) {
+            $receivedIDs[] = $obtainPresent[$i]->id;
+
             if (!is_null($obtainPresent[$i]->deletedAt)) {
                 throw new HttpInternalServerErrorException($request, 'received present');
             }
@@ -1446,16 +1448,6 @@ final class Handler
             $obtainPresent[$i]->updatedAt = $requestAt;
             $obtainPresent[$i]->deletedAt = $requestAt;
             $v = $obtainPresent[$i];
-            $query = 'UPDATE user_presents SET deleted_at=?, updated_at=? WHERE id=?';
-            try {
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-                $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
-                $stmt->bindValue(3, $v->id, PDO::PARAM_INT);
-                $stmt->execute();
-            } catch (PDOException $e) {
-                throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-            }
 
             try {
                 $this->obtainItem($v->userID, $v->itemID, $v->itemType, $v->amount, $requestAt);
@@ -1468,6 +1460,20 @@ final class Handler
                 }
                 throw new HttpInternalServerErrorException($request, $err, $e);
             }
+        }
+        $placeholders = implode(',', array_fill(0, count($receivedIDs), '?'));
+        $query = "UPDATE user_presents SET deleted_at=?, updated_at=? WHERE id IN ({$placeholders})";
+        try {
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
+            $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
+            $position = 3;
+            foreach ($receivedIDs as $receivedID) {
+                $stmt->bindValue($position++, $receivedID, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        } catch (PDOException $e) {
+            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
         $this->db->commit();
