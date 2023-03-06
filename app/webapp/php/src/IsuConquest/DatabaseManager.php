@@ -39,7 +39,7 @@ class DatabaseManager
         );
 
         return new PDO($dsn, $databaseSettings['user'], $databaseSettings['password'], [
-            PDO::ATTR_PERSISTENT => false,
+            PDO::ATTR_PERSISTENT => true,
         ]);
     }
 
