@@ -559,57 +559,78 @@ final class Handler
         if (!count($items)) {
             return;
         }
+        $itemIds = [];
+        foreach ($items as $item) {
+            $itemIds[] = $item['itemId'];
+        }
+        $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+        $query = "SELECT * FROM item_masters WHERE id IN ({$placeholders})";
+        $stmt = $this->db->prepare($query);
+        $position = 1;
+        foreach ($itemIds as $itemID) {
+            $stmt->bindValue($position++, $itemID, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $itemMasters = [];
+        while ($row = $stmt->fetch()) {
+            $item = ItemMaster::fromDBRow($row);
+            $itemMasters[$item->id] = $item;
+        }
+        $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+        $query = "SELECT * FROM user_items WHERE user_id=? AND item_id IN ({$placeholders})";
+        $stmt = $this->db->prepare($query);
+        $stmt->bindValue(1, $userID, PDO::PARAM_INT);
+        $position = 2;
+        foreach ($itemIds as $itemId) {
+            $stmt->bindValue($position++, $itemId, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $userItems = [];
+        while ($row = $stmt->fetch()) {
+            $uitem = UserItem::fromDBRow($row);
+            $userItems[$uitem->itemID] = $uitem;
+        }
+
+        $bulkUpserts = [];
         foreach ($items as $item) {
             $itemID = $item['itemId'];
             $obtainAmount = $item['obtainAmount'];
-            $query = 'SELECT * FROM item_masters WHERE id=?';
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $itemID, PDO::PARAM_INT);
-            $stmt->execute();
-            $row = $stmt->fetch();
-            if ($row === false) {
-                throw new RuntimeException($this->errItemNotFound);
-            }
-            $item = ItemMaster::fromDBRow($row);
             // 所持数取得
-            $query = 'SELECT * FROM user_items WHERE user_id=? AND item_id=?';
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-            $stmt->bindValue(2, $item->id, PDO::PARAM_INT);
-            $stmt->execute();
-            $row = $stmt->fetch();
-            if ($row === false) { // 新規作成
+            if (!isset($userItems[$itemID]) and !isset($bulkUpserts[$itemID])) { // 新規作成
                 $uitemID = $this->generateID();
+                $itemMaster = $itemMasters[$itemID];
                 $uitem = new UserItem(
                     id: $uitemID,
                     userID: $userID,
-                    itemType: $item->itemType,
-                    itemID: $item->id,
+                    itemType: $itemMaster->itemType,
+                    itemID: $itemMaster->id,
                     amount: $obtainAmount,
                     createdAt: $requestAt,
                     updatedAt: $requestAt,
                 );
-                $query = 'INSERT INTO user_items(id, user_id, item_id, item_type, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $uitem->id, PDO::PARAM_INT);
-                $stmt->bindValue(2, $userID, PDO::PARAM_INT);
-                $stmt->bindValue(3, $uitem->itemID, PDO::PARAM_INT);
-                $stmt->bindValue(4, $uitem->itemType, PDO::PARAM_INT);
-                $stmt->bindValue(5, $uitem->amount, PDO::PARAM_INT);
-                $stmt->bindValue(6, $requestAt, PDO::PARAM_INT);
-                $stmt->bindValue(7, $requestAt, PDO::PARAM_INT);
-                $stmt->execute();
+                $bulkUpserts[$itemID] = $uitem;
             } else { // 更新
-                $uitem = UserItem::fromDBRow($row);
-                $uitem->amount += $obtainAmount;
-                $uitem->updatedAt = $requestAt;
-                $query = 'UPDATE user_items SET amount=?, updated_at=? WHERE id=?';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $uitem->amount, PDO::PARAM_INT);
-                $stmt->bindValue(2, $uitem->updatedAt, PDO::PARAM_INT);
-                $stmt->bindValue(3, $uitem->id, PDO::PARAM_INT);
-                $stmt->execute();
+                $bulkUpserts[$itemID] ??= $userItems[$itemID];
+                $bulkUpserts[$itemID]->amount += $obtainAmount;
+                $bulkUpserts[$itemID]->updatedAt = $requestAt;
             }
+        }
+
+        if ($bulkUpserts) {
+            $placeholders = implode(',', array_fill(0, count($bulkUpserts), '(?, ?, ?, ?, ?, ?, ?)'));
+            $query = 'INSERT INTO user_items (id, user_id, item_type, item_id, amount, created_at, updated_at) VALUES ' . $placeholders .' ON DUPLICATE KEY UPDATE id = VALUES(id), user_id = VALUES(user_id), item_type = VALUES(item_type), item_id = VALUES(item_id), amount = VALUES(amount), created_at = VALUES(created_at), updated_at = VALUES(updated_at)';
+            $stmt = $this->db->prepare($query);
+            $position = 1;
+            foreach ($bulkUpserts as $uitem) {
+                $stmt->bindValue($position++, $uitem->id, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $userID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $uitem->itemType, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $uitem->itemID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $uitem->amount, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $uitem->createdAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $uitem->updatedAt, PDO::PARAM_INT);
+            }
+            $stmt->execute();
         }
     }
 
@@ -1475,6 +1496,7 @@ final class Handler
         $presentIDs = [];
         $coinAmount = 0;
         $cardIDs = [];
+        $item45s = [];
         for ($i = 0; $i < count($obtainPresent); $i++) {
             $presentIDs[] = $obtainPresent[$i]->id;
             if ($obtainPresent[$i]->deletedAt !== null) {
@@ -1490,17 +1512,7 @@ final class Handler
                     $cardIDs[] = $obtainPresent[$i]->itemID;
                     break;
                 default:
-                    try {
-                        $this->obtainItem($obtainPresent[$i]->userID, $obtainPresent[$i]->itemID, $obtainPresent[$i]->itemType, $obtainPresent[$i]->amount, $requestAt);
-                    } catch (Exception $e) {
-                        $err = $e->getMessage();
-                        if ($err === $this->errUserNotFound || $err === $this->errItemNotFound) {
-                            throw new HttpNotFoundException($request, $err, $e);
-                        } elseif ($err === $this->errInvalidItemType) {
-                            throw new HttpBadRequestException($request, $err, $e);
-                        }
-                        throw new HttpInternalServerErrorException($request, $err, $e);
-                    }
+                    $item45s[] = ['itemId' => $obtainPresent[$i]->itemID, 'obtainAmount' => $obtainPresent[$i]->amount];
             }
         }
         if (count($presentIDs)) {
@@ -1515,11 +1527,12 @@ final class Handler
                     $stmt->bindValue($position++, $presentID, PDO::PARAM_INT);
                 }
                 $stmt->execute();
+                $this->obtainCoin($userID, $coinAmount);
+                $this->obtainCards($userID, $requestAt, $cardIDs);
+                $this->obtain45Items($userID, $requestAt, $item45s);
             } catch (PDOException $e) {
                 throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
             }
-            $this->obtainCoin($userID, $coinAmount);
-            $this->obtainCards($userID, $requestAt, $cardIDs);
         }
 
 
