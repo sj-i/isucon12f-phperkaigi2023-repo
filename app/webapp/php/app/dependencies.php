@@ -9,6 +9,9 @@ use Monolog\Logger;
 use Monolog\Processor\UidProcessor;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpClient\CurlHttpClient;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
+use function DI\autowire;
 
 return function (ContainerBuilder $containerBuilder) {
     $containerBuilder->addDefinitions([
@@ -40,5 +43,6 @@ return function (ContainerBuilder $containerBuilder) {
                 PDO::ATTR_PERSISTENT => true,
             ]);
         },
+        HttpClientInterface::class => autowire(CurlHttpClient::class)
     ]);
 };

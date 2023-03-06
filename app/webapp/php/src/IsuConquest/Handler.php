@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\IsuConquest;
 
+use App\Application\Settings\SettingsInterface;
 use DateTimeImmutable;
 use Exception;
 use Fig\Http\Message\StatusCodeInterface;
@@ -20,6 +21,7 @@ use Slim\Exception\HttpForbiddenException;
 use Slim\Exception\HttpInternalServerErrorException;
 use Slim\Exception\HttpNotFoundException;
 use Slim\Exception\HttpUnauthorizedException;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final class Handler
 {
@@ -33,6 +35,8 @@ final class Handler
     public function __construct(
         private readonly PDO $db,
         private readonly Logger $logger,
+        private readonly HttpClientInterface $httpClient,
+        private readonly SettingsInterface $settings,
     ) {
     }
 
@@ -621,6 +625,13 @@ final class Handler
      */
     public function initialize(Request $request, Response $response): Response
     {
+        $database_host = $this->settings->get('database')['host'];
+        if ($database_host !== $request->getUri()->getHost()) {
+            $this->httpClient->request('POST', "http://{$database_host}/initialize");
+            return $this->successResponse($response, new InitializeResponse(
+                language: 'php',
+            ));
+        }
         $fp = fopen('php://temp', 'w+');
         $descriptorSpec = [
             1 => $fp,
