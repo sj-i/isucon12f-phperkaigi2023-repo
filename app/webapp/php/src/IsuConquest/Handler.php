@@ -553,6 +553,66 @@ final class Handler
         $stmt->execute();
     }
 
+    /** @param array{itemId: int, obtainAmount: int}[] $items */
+    private function obtain45Items(int $userID, int $requestAt, array $items): void
+    {
+        if (!count($items)) {
+            return;
+        }
+        foreach ($items as $item) {
+            $itemID = $item['itemId'];
+            $obtainAmount = $item['obtainAmount'];
+            $query = 'SELECT * FROM item_masters WHERE id=?';
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(1, $itemID, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch();
+            if ($row === false) {
+                throw new RuntimeException($this->errItemNotFound);
+            }
+            $item = ItemMaster::fromDBRow($row);
+            // 所持数取得
+            $query = 'SELECT * FROM user_items WHERE user_id=? AND item_id=?';
+            $stmt = $this->db->prepare($query);
+            $stmt->bindValue(1, $userID, PDO::PARAM_INT);
+            $stmt->bindValue(2, $item->id, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch();
+            if ($row === false) { // 新規作成
+                $uitemID = $this->generateID();
+                $uitem = new UserItem(
+                    id: $uitemID,
+                    userID: $userID,
+                    itemType: $item->itemType,
+                    itemID: $item->id,
+                    amount: $obtainAmount,
+                    createdAt: $requestAt,
+                    updatedAt: $requestAt,
+                );
+                $query = 'INSERT INTO user_items(id, user_id, item_id, item_type, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
+                $stmt = $this->db->prepare($query);
+                $stmt->bindValue(1, $uitem->id, PDO::PARAM_INT);
+                $stmt->bindValue(2, $userID, PDO::PARAM_INT);
+                $stmt->bindValue(3, $uitem->itemID, PDO::PARAM_INT);
+                $stmt->bindValue(4, $uitem->itemType, PDO::PARAM_INT);
+                $stmt->bindValue(5, $uitem->amount, PDO::PARAM_INT);
+                $stmt->bindValue(6, $requestAt, PDO::PARAM_INT);
+                $stmt->bindValue(7, $requestAt, PDO::PARAM_INT);
+                $stmt->execute();
+            } else { // 更新
+                $uitem = UserItem::fromDBRow($row);
+                $uitem->amount += $obtainAmount;
+                $uitem->updatedAt = $requestAt;
+                $query = 'UPDATE user_items SET amount=?, updated_at=? WHERE id=?';
+                $stmt = $this->db->prepare($query);
+                $stmt->bindValue(1, $uitem->amount, PDO::PARAM_INT);
+                $stmt->bindValue(2, $uitem->updatedAt, PDO::PARAM_INT);
+                $stmt->bindValue(3, $uitem->id, PDO::PARAM_INT);
+                $stmt->execute();
+            }
+        }
+    }
+
     /**
      * obtainItem アイテム付与処理
      *
@@ -572,55 +632,7 @@ final class Handler
 
             case 3:
             case 4: // 強化素材
-                $query = 'SELECT * FROM item_masters WHERE id=? AND item_type=?';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $itemID, PDO::PARAM_INT);
-                $stmt->bindValue(2, $itemType, PDO::PARAM_INT);
-                $stmt->execute();
-                $row = $stmt->fetch();
-                if ($row === false) {
-                    throw new RuntimeException($this->errItemNotFound);
-                }
-                $item = ItemMaster::fromDBRow($row);
-                // 所持数取得
-                $query = 'SELECT * FROM user_items WHERE user_id=? AND item_id=?';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-                $stmt->bindValue(2, $item->id, PDO::PARAM_INT);
-                $stmt->execute();
-                $row = $stmt->fetch();
-                if ($row === false) { // 新規作成
-                    $uitemID = $this->generateID();
-                    $uitem = new UserItem(
-                        id: $uitemID,
-                        userID: $userID,
-                        itemType: $item->itemType,
-                        itemID: $item->id,
-                        amount: $obtainAmount,
-                        createdAt: $requestAt,
-                        updatedAt: $requestAt,
-                    );
-                    $query = 'INSERT INTO user_items(id, user_id, item_id, item_type, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
-                    $stmt = $this->db->prepare($query);
-                    $stmt->bindValue(1, $uitem->id, PDO::PARAM_INT);
-                    $stmt->bindValue(2, $userID, PDO::PARAM_INT);
-                    $stmt->bindValue(3, $uitem->itemID, PDO::PARAM_INT);
-                    $stmt->bindValue(4, $uitem->itemType, PDO::PARAM_INT);
-                    $stmt->bindValue(5, $uitem->amount, PDO::PARAM_INT);
-                    $stmt->bindValue(6, $requestAt, PDO::PARAM_INT);
-                    $stmt->bindValue(7, $requestAt, PDO::PARAM_INT);
-                    $stmt->execute();
-                } else { // 更新
-                    $uitem = UserItem::fromDBRow($row);
-                    $uitem->amount += $obtainAmount;
-                    $uitem->updatedAt = $requestAt;
-                    $query = 'UPDATE user_items SET amount=?, updated_at=? WHERE id=?';
-                    $stmt = $this->db->prepare($query);
-                    $stmt->bindValue(1, $uitem->amount, PDO::PARAM_INT);
-                    $stmt->bindValue(2, $uitem->updatedAt, PDO::PARAM_INT);
-                    $stmt->bindValue(3, $uitem->id, PDO::PARAM_INT);
-                    $stmt->execute();
-                }
+                $this->obtain45Items($userID, $requestAt, [['itemId' => $itemID, 'obtainAmount' => $obtainAmount]]);
                 break;
 
             default:
