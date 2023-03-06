@@ -779,22 +779,26 @@ final class Handler
                 createdAt: $requestAt,
                 updatedAt: $requestAt,
             );
-            $query = 'INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-            try {
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $card->id, PDO::PARAM_INT);
-                $stmt->bindValue(2, $card->userID, PDO::PARAM_INT);
-                $stmt->bindValue(3, $card->cardID, PDO::PARAM_INT);
-                $stmt->bindValue(4, $card->amountPerSec, PDO::PARAM_INT);
-                $stmt->bindValue(5, $card->level, PDO::PARAM_INT);
-                $stmt->bindValue(6, $card->totalExp, PDO::PARAM_INT);
-                $stmt->bindValue(7, $card->createdAt, PDO::PARAM_INT);
-                $stmt->bindValue(8, $card->updatedAt, PDO::PARAM_INT);
-                $stmt->execute();
-            } catch (PDOException $e) {
-                throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-            }
             $initCards[] = $card;
+        }
+        $placeholders = implode(',', array_fill(0, count($initCards), '(?, ?, ?, ?, ?, ?, ?, ?)'));
+        $query = 'INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES ' . $placeholders;
+        try {
+            $stmt = $this->db->prepare($query);
+            $position = 1;
+            foreach ($initCards as $card) {
+                $stmt->bindValue($position++, $card->id, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->userID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->cardID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->amountPerSec, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->level, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->totalExp, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->createdAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $card->updatedAt, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        } catch (PDOException $e) {
+            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
         try {
