@@ -90,6 +90,12 @@ final class Handler
             throw new HttpUnauthorizedException($request, $this->errUnauthorized);
         }
 
+        $sessionUserIDStrs = explode('::', $sessID);
+        if (!is_array($sessionUserIDStrs) or count($sessionUserIDStrs) !== 2) {
+            throw new HttpUnauthorizedException($request, $this->errUnauthorized);
+        }
+        $sessionUserID = (int)$sessionUserIDStrs[1];
+
         try {
             $userID = $this->getUserID($request);
         } catch (RuntimeException $e) {
@@ -104,7 +110,7 @@ final class Handler
 
         $query = 'SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
+            $stmt = $this->databaseManager->selectDatabase($sessionUserID)->prepare($query);
             $stmt->execute([$sessID]);
             $row = $stmt->fetch();
         } catch (PDOException $e) {
@@ -831,7 +837,7 @@ final class Handler
         $sess = new Session(
             id: $sID,
             userID: $user->id,
-            sessionID: $sessID,
+            sessionID: "{$sessID}::{$user->id}",
             createdAt: $requestAt,
             updatedAt: $requestAt,
             expiredAt: $requestAt + 86400,
@@ -935,7 +941,7 @@ final class Handler
         $sess = new Session(
             id: $sID,
             userID: $req->userID,
-            sessionID: $sessID,
+            sessionID: "{$sessID}::{$user->id}",
             createdAt: $requestAt,
             updatedAt: $requestAt,
             expiredAt: $requestAt + 86400,
