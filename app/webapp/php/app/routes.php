@@ -18,6 +18,7 @@ return function (App $app) {
     // utility
     $app->post('/initialize', Handler::class . ':initialize');
     $app->get('/health', Handler::class . ':health');
+    $app->get('/test', Handler::class . ':test');
 
     // feature
     $app->group('', function (RouteCollectorProxy $api) {
