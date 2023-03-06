@@ -1346,7 +1346,7 @@ final class Handler
         try {
             $stmt = $this->db->prepare($query);
             $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-            $stmt->bindValue(2, self::PRESENT_COUNT_PER_PAGE, PDO::PARAM_INT);
+            $stmt->bindValue(2, self::PRESENT_COUNT_PER_PAGE + 1, PDO::PARAM_INT);
             $stmt->bindValue(3, $offset, PDO::PARAM_INT);
             $stmt->execute();
             while ($row = $stmt->fetch()) {
@@ -1356,18 +1356,9 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        try {
-            $stmt = $this->db->prepare('SELECT COUNT(*) FROM user_presents WHERE user_id = ? AND deleted_at IS NULL');
-            $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-            $stmt->execute();
-            $presentCount = $stmt->fetchColumn();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-
-        $isNext = false;
-        if ($presentCount > ($offset + self::PRESENT_COUNT_PER_PAGE)) {
-            $isNext = true;
+        $isNext = count($presentList) === self::PRESENT_COUNT_PER_PAGE + 1;
+        if ($isNext) {
+            unset($presentList[self::PRESENT_COUNT_PER_PAGE]);
         }
 
         return $this->successResponse($response, new ListPresentResponse(
