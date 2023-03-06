@@ -38,6 +38,7 @@ return function (ContainerBuilder $containerBuilder) {
 
             return new PDO($dsn, $databaseSettings['user'], $databaseSettings['password'], [
                 PDO::ATTR_PERSISTENT => true,
+                PDO::ATTR_EMULATE_PREPARES => false,
             ]);
         },
     ]);
