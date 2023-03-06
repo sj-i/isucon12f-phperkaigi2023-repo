@@ -484,6 +484,26 @@ final class Handler
         return $obtainPresents;
     }
 
+    private function obtainCoin(int $userID, int $obtainAmount): void
+    {
+        $query = 'SELECT * FROM users WHERE id=?';
+        $stmt = $this->db->prepare($query);
+        $stmt->bindValue(1, $userID, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row === false) {
+            throw new RuntimeException($this->errUserNotFound);
+        }
+        $user = User::fromDBRow($row);
+
+        $query = 'UPDATE users SET isu_coin=? WHERE id=?';
+        $totalCoin = $user->isuCoin + $obtainAmount;
+        $stmt = $this->db->prepare($query);
+        $stmt->bindValue(1, $totalCoin, PDO::PARAM_INT);
+        $stmt->bindValue(2, $userID, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
     /**
      * obtainItem アイテム付与処理
      *
@@ -494,23 +514,8 @@ final class Handler
     {
         switch ($itemType) {
             case 1: // coin
-                $query = 'SELECT * FROM users WHERE id=?';
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-                $stmt->execute();
-                $row = $stmt->fetch();
-                if ($row === false) {
-                    throw new RuntimeException($this->errUserNotFound);
-                }
-                $user = User::fromDBRow($row);
-
-                $query = 'UPDATE users SET isu_coin=? WHERE id=?';
-                $totalCoin = $user->isuCoin + $obtainAmount;
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $totalCoin, PDO::PARAM_INT);
-                $stmt->bindValue(2, $userID, PDO::PARAM_INT);
-                $stmt->execute();
-                break;
+                $this->obtainCoin($userID, $obtainAmount);
+                return;
 
             case 2: // card(ハンマー)
                 $query = 'SELECT * FROM item_masters WHERE id=? AND item_type=?';
@@ -1437,6 +1442,7 @@ final class Handler
         $this->db->beginTransaction();
         $receivedIDs = [];
         // 配布処理
+        $coinAmount = 0;
         for ($i = 0; $i < count($obtainPresent); $i++) {
             $receivedIDs[] = $obtainPresent[$i]->id;
 
@@ -1447,6 +1453,10 @@ final class Handler
             $obtainPresent[$i]->updatedAt = $requestAt;
             $obtainPresent[$i]->deletedAt = $requestAt;
             $v = $obtainPresent[$i];
+            if ($v->itemType === 1) {
+                $coinAmount += $v->amount;
+                continue;
+            }
 
             try {
                 $this->obtainItem($v->userID, $v->itemID, $v->itemType, $v->amount, $requestAt);
@@ -1474,6 +1484,8 @@ final class Handler
         } catch (PDOException $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
+
+        $this->obtainCoin($userID, $coinAmount);
 
         $this->db->commit();
 
