@@ -1021,19 +1021,7 @@ final class Handler
         }
 
         /** @var list<GachaMaster> $gachaMasterList */
-        $gachaMasterList = [];
-        $query = 'SELECT * FROM gacha_masters WHERE start_at <= ? AND end_at >= ? ORDER BY display_order ASC';
-        try {
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
-            $stmt->execute();
-            while ($row = $stmt->fetch()) {
-                $gachaMasterList[] = GachaMaster::fromDBRow($row);
-            }
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
+        $gachaMasterList = $this->masterCache->getGachaMaster($requestAt);
         if (count($gachaMasterList) === 0) {
             return $this->successResponse($response, new ListGachaResponse( // 0 件
                 oneTimeToken: '',
@@ -1049,12 +1037,7 @@ final class Handler
             $stmt = $this->db->prepare($query);
             foreach ($gachaMasterList as $v) {
                 /** @var list<GachaItemMaster> $gachaItem */
-                $gachaItem = [];
-                $stmt->bindValue(1, $v->id, PDO::PARAM_INT);
-                $stmt->execute();
-                while ($row = $stmt->fetch()) {
-                    $gachaItem[] = GachaItemMaster::fromDBRow($row);
-                }
+                $gachaItem = $this->masterCache->getGachaItemMasterByID($v->id);
                 if (count($gachaItem) === 0) {
                     throw new HttpNotFoundException($request, 'not found gacha item');
                 }
@@ -1193,35 +1176,14 @@ final class Handler
         }
 
         // gachaIDからガチャマスタの取得
-        $query = 'SELECT * FROM gacha_masters WHERE id=? AND start_at <= ? AND end_at >= ?';
-        try {
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $gachaID, PDO::PARAM_INT);
-            $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(3, $requestAt, PDO::PARAM_INT);
-            $stmt->execute();
-            $row = $stmt->fetch();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        if ($row === false) {
+        $gachaInfo = $this->masterCache->getGachaMasterByID($gachaID, $requestAt);
+        if ($gachaInfo === null) {
             throw new HttpNotFoundException($request, 'not found gacha');
         }
-        $gachaInfo = GachaMaster::fromDBRow($row);
 
         // gachaItemMasterからアイテムリスト取得
         /** @var list<GachaItemMaster> $gachaItemList */
-        $gachaItemList = [];
-        try {
-            $stmt = $this->db->prepare('SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC');
-            $stmt->bindValue(1, $gachaID, PDO::PARAM_INT);
-            $stmt->execute();
-            while ($row = $stmt->fetch()) {
-                $gachaItemList[] = GachaItemMaster::fromDBRow($row);
-            }
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
+        $gachaItemList = $this->masterCache->getGachaItemMasterByID($gachaID);
         if (count($gachaItemList) === 0) {
             throw new HttpNotFoundException($request, 'not found gacha item');
         }

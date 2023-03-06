@@ -13,6 +13,12 @@ class MasterCache
     /** @var array[] */
     private array $loginBonusMastersCache = [];
 
+    /** @var array[] */
+    private array $gachaMastersCache = [];
+
+    /** @var array[] */
+    private array $gachaItmMastersCache = [];
+
     private readonly PhpArrayAdapter $cache;
 
     public function __construct(
@@ -43,10 +49,14 @@ class MasterCache
                 ->fetchAll(PDO::FETCH_ASSOC),
             'item_masters' => $this->db->query('SELECT * FROM item_masters')
                 ->fetchAll(PDO::FETCH_ASSOC),
+            'gacha_masters' => $this->db->query('SELECT * FROM gacha_masters ORDER BY display_order')
+                ->fetchAll(PDO::FETCH_ASSOC),
+            'gacha_item_masters' => $this->db->query('SELECT * FROM gacha_item_masters ORDER BY id ASC')
+                ->fetchAll(PDO::FETCH_ASSOC),
         ]);
     }
 
-    public function getLoginBonusMaster(int $requestAt)
+    public function getLoginBonusMaster(int $requestAt): array
     {
         if (!$this->loginBonusMastersCache) {
             $this->loginBonusMastersCache = $this->cache->getItem('login_bonus_masters')->get();
@@ -71,5 +81,47 @@ class MasterCache
             }
         }
         return null;
+    }
+
+    public function getGachaMaster(int $requestAt): array
+    {
+        if (!$this->gachaMastersCache) {
+            $this->gachaMastersCache = $this->cache->getItem('gacha_masters')->get();
+        }
+        $result = [];
+        foreach ($this->gachaMastersCache as $gachaMaster) {
+            if ($gachaMaster['start_at'] <= $requestAt and $requestAt <= $gachaMaster['end_at']) {
+                $result[] = GachaMaster::fromDBRow($gachaMaster);
+            }
+        }
+        return $result;
+    }
+
+    public function getGachaMasterByID(int $id, int $requestAt): ?GachaMaster
+    {
+        if (!$this->gachaMastersCache) {
+            $this->gachaMastersCache = $this->cache->getItem('gacha_masters')->get();
+        }
+        foreach ($this->gachaMastersCache as $gachaMaster) {
+            if ($gachaMaster['id'] === $id and $gachaMaster['start_at'] <= $requestAt and $requestAt <= $gachaMaster['end_at']) {
+                return GachaMaster::fromDBRow($gachaMaster);
+            }
+        }
+        return null;
+    }
+
+    /** @return GachaItemMaster[] */
+    public function getGachaItemMasterByID(int $id): array
+    {
+        if (!$this->gachaItmMastersCache) {
+            $this->gachaItmMastersCache = $this->cache->getItem('gacha_item_masters')->get();
+        }
+        $result = [];
+        foreach ($this->gachaItmMastersCache as $gachaItemMaster) {
+            if ($gachaItemMaster['gacha_id'] === $id) {
+                $result[] = GachaItemMaster::fromDBRow($gachaItemMaster);
+            }
+        }
+        return $result;
     }
 }
