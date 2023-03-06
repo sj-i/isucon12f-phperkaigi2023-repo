@@ -486,20 +486,9 @@ final class Handler
 
     private function obtainCoin(int $userID, int $obtainAmount): void
     {
-        $query = 'SELECT * FROM users WHERE id=?';
+        $query = 'UPDATE users SET isu_coin=isu_coin+? WHERE id=?';
         $stmt = $this->db->prepare($query);
-        $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch();
-        if ($row === false) {
-            throw new RuntimeException($this->errUserNotFound);
-        }
-        $user = User::fromDBRow($row);
-
-        $query = 'UPDATE users SET isu_coin=? WHERE id=?';
-        $totalCoin = $user->isuCoin + $obtainAmount;
-        $stmt = $this->db->prepare($query);
-        $stmt->bindValue(1, $totalCoin, PDO::PARAM_INT);
+        $stmt->bindValue(1, $obtainAmount, PDO::PARAM_INT);
         $stmt->bindValue(2, $userID, PDO::PARAM_INT);
         $stmt->execute();
     }
@@ -1499,9 +1488,6 @@ final class Handler
         $item45s = [];
         for ($i = 0; $i < count($obtainPresent); $i++) {
             $presentIDs[] = $obtainPresent[$i]->id;
-            if ($obtainPresent[$i]->deletedAt !== null) {
-                throw new HttpInternalServerErrorException($request, 'received present');
-            }
             $obtainPresent[$i]->updatedAt = $requestAt;
             $obtainPresent[$i]->deletedAt = $requestAt;
             switch ($obtainPresent[$i]->itemType) {
