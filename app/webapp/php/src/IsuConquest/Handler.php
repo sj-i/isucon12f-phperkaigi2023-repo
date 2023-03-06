@@ -394,21 +394,32 @@ final class Handler
         }
 
         // 全員プレゼント取得情報更新
+        $ids = [];
+        foreach ($normalPresents as $np) {
+            $ids[] = $np->id;
+        }
+        $ids_placeholder = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT present_all_id FROM user_present_all_received_history WHERE user_id=? AND present_all_id IN ({$ids_placeholder})");
+        foreach ([$userID, ...$ids] as $index => $value) {
+            $stmt->bindValue($index + 1, $value, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $received_ids = [];
+        while ($row = $stmt->fetch()) {
+            $received_ids[$row['present_all_id']] = true;
+        }
+        $histories = [];
         /** @var list<UserPresent> $obtainPresents */
         $obtainPresents = [];
         foreach ($normalPresents as $np) {
-            $query = 'SELECT * FROM user_present_all_received_history WHERE user_id=? AND present_all_id=?';
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-            $stmt->bindValue(2, $np->id, PDO::PARAM_INT);
-            $stmt->execute();
-            if ($stmt->fetch() !== false) {
-                // プレゼント配布済み
+            if (isset($received_ids[$np->id])) {
                 continue;
             }
 
             // user present boxに入れる
+            // history に入れる
             $pID = $this->generateID();
+            $phID = $this->generateID();
             $up = new UserPresent(
                 id: $pID,
                 userID: $userID,
@@ -420,21 +431,6 @@ final class Handler
                 createdAt: $requestAt,
                 updatedAt: $requestAt,
             );
-            $query = 'INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $up->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $up->userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $up->sentAt, PDO::PARAM_INT);
-            $stmt->bindValue(4, $up->itemType, PDO::PARAM_INT);
-            $stmt->bindValue(5, $up->itemID, PDO::PARAM_INT);
-            $stmt->bindValue(6, $up->amount, PDO::PARAM_INT);
-            $stmt->bindValue(7, $up->presentMessage);
-            $stmt->bindValue(8, $up->createdAt, PDO::PARAM_INT);
-            $stmt->bindValue(9, $up->updatedAt, PDO::PARAM_INT);
-            $stmt->execute();
-
-            // historyに入れる
-            $phID = $this->generateID();
             $history = new UserPresentAllReceivedHistory(
                 id: $phID,
                 userID: $userID,
@@ -443,17 +439,42 @@ final class Handler
                 createdAt: $requestAt,
                 updatedAt: $requestAt,
             );
-            $query = 'INSERT INTO user_present_all_received_history(id, user_id, present_all_id, received_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)';
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, $history->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $history->userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $history->presentAllID, PDO::PARAM_INT);
-            $stmt->bindValue(4, $history->receivedAt, PDO::PARAM_INT);
-            $stmt->bindValue(5, $history->createdAt, PDO::PARAM_INT);
-            $stmt->bindValue(6, $history->updatedAt, PDO::PARAM_INT);
-            $stmt->execute();
-
             $obtainPresents[] = $up;
+            $histories[] = $history;
+        }
+        if (count($obtainPresents)) {
+            $placeholder = implode(',', array_fill(0, count($obtainPresents), '(?, ?, ?, ?, ?, ?, ?, ?, ?)'));
+            $query = 'INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES' . $placeholder . ';';
+            $stmt = $this->db->prepare($query);
+            $position = 1;
+            foreach ($obtainPresents as $obtainPresent) {
+                $stmt->bindValue($position++, $obtainPresent->id, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->userID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->sentAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->itemType, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->itemID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->amount, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->presentMessage);
+                $stmt->bindValue($position++, $obtainPresent->createdAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $obtainPresent->updatedAt, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        }
+
+        if (count($histories)) {
+            $placeholder = implode(',', array_fill(0, count($histories), '(?, ?, ?, ?, ?, ?)'));
+            $query = 'INSERT INTO user_present_all_received_history(id, user_id, present_all_id, received_at, created_at, updated_at) VALUES ' . $placeholder  . ';';
+            $stmt = $this->db->prepare($query);
+            $position = 1;
+            foreach ($histories as $history) {
+                $stmt->bindValue($position++, $history->id, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $history->userID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $history->presentAllID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $history->receivedAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $history->createdAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $history->updatedAt, PDO::PARAM_INT);
+            }
+            $stmt->execute();
         }
 
         return $obtainPresents;
