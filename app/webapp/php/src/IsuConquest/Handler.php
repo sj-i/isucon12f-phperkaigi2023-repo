@@ -37,6 +37,7 @@ final class Handler
         private readonly Logger $logger,
         private readonly HttpClientInterface $httpClient,
         private readonly SettingsInterface $settings,
+        private readonly MasterCache $masterCache,
     ) {
     }
 
@@ -52,19 +53,9 @@ final class Handler
         $request = $request->withAttribute('requestTime', $requestAt->getTimestamp());
 
         // マスタ確認
-        $query = 'SELECT * FROM version_masters WHERE status=1';
-        try {
-            $stmt = $this->db->query($query);
-            $row = $stmt->fetch();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        if ($row === false) {
-            throw new HttpNotFoundException($request, 'active master version is not found');
-        }
-        $masterVersion = VersionMaster::fromDBRow($row);
+        $masterVersion = $this->masterCache->shouldRecache();
 
-        if (!$request->hasHeader('x-master-version') || $masterVersion->masterVersion !== $request->getHeader('x-master-version')[0]) {
+        if (!$request->hasHeader('x-master-version') || $masterVersion !== $request->getHeader('x-master-version')[0]) {
             throw new HttpException($request, $this->errInvalidMasterVersion, StatusCodeInterface::STATUS_UNPROCESSABLE_ENTITY);
         }
 
@@ -283,15 +274,7 @@ final class Handler
     {
         // login bonus masterから有効なログインボーナスを取得
         /** @var list<LoginBonusMaster> $loginBonuses */
-        $loginBonuses = [];
-        $query = 'SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?';
-        $stmt = $this->db->prepare($query);
-        $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-        $stmt->bindValue(2, $requestAt, PDO::PARAM_INT);
-        $stmt->execute();
-        while ($row = $stmt->fetch()) {
-            $loginBonuses[] = LoginBonusMaster::fromDBRow($row);
-        }
+        $loginBonuses = $this->masterCache->getLoginBonusMaster($requestAt);
 
         /** @var list<UserLoginBonus> $sendLoginBonuses */
         $sendLoginBonuses = [];
@@ -499,17 +482,13 @@ final class Handler
             return;
         }
         $uniqueItemIDs = array_values(array_unique($itemIDs));
-        $placeholders = implode(',', array_fill(0, count($uniqueItemIDs), '?'));
-        $query = "SELECT * FROM item_masters WHERE id IN ({$placeholders}) AND item_type=2";
-        $stmt = $this->db->prepare($query);
-        $stmt->execute($uniqueItemIDs);
         $items = [];
-        while ($row = $stmt->fetch()) {
-            $item = ItemMaster::fromDBRow($row);
+        foreach ($uniqueItemIDs as $itemID) {
+            $item = $this->masterCache->getItemMasterById($itemID);
+            if (is_null($item)) {
+                throw new RuntimeException($this->errItemNotFound);
+            }
             $items[$item->id] = $item;
-        }
-        if (count($items) !== count($uniqueItemIDs)) {
-            throw new RuntimeException($this->errItemNotFound);
         }
         $cards = [];
         foreach ($itemIDs as $itemID) {
@@ -553,19 +532,6 @@ final class Handler
             $itemIds[] = $item['itemId'];
         }
         $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
-        $query = "SELECT * FROM item_masters WHERE id IN ({$placeholders})";
-        $stmt = $this->db->prepare($query);
-        $position = 1;
-        foreach ($itemIds as $itemID) {
-            $stmt->bindValue($position++, $itemID, PDO::PARAM_INT);
-        }
-        $stmt->execute();
-        $itemMasters = [];
-        while ($row = $stmt->fetch()) {
-            $item = ItemMaster::fromDBRow($row);
-            $itemMasters[$item->id] = $item;
-        }
-        $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
         $query = "SELECT * FROM user_items WHERE user_id=? AND item_id IN ({$placeholders})";
         $stmt = $this->db->prepare($query);
         $stmt->bindValue(1, $userID, PDO::PARAM_INT);
@@ -587,7 +553,7 @@ final class Handler
             // 所持数取得
             if (!isset($userItems[$itemID]) and !isset($bulkUpserts[$itemID])) { // 新規作成
                 $uitemID = $this->generateID();
-                $itemMaster = $itemMasters[$itemID];
+                $itemMaster = $this->masterCache->getItemMasterById($itemID);
                 $uitem = new UserItem(
                     id: $uitemID,
                     userID: $userID,
@@ -681,6 +647,7 @@ final class Handler
             $out = stream_get_contents($fp);
             throw new HttpInternalServerErrorException($request, sprintf('Failed to initialize: %s', $out));
         }
+        $this->masterCache->shouldRecache();
 
         return $this->successResponse($response, new InitializeResponse(
             language: 'php',
@@ -769,19 +736,10 @@ final class Handler
         }
 
         // 初期デッキ付与
-        $query = 'SELECT * FROM item_masters WHERE id=?';
-        try {
-            $stmt = $this->db->prepare($query);
-            $stmt->bindValue(1, 2, PDO::PARAM_INT);
-            $stmt->execute();
-            $row = $stmt->fetch();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        if ($row === false) {
+        $initCard = $this->masterCache->getItemMasterById(2);
+        if ($initCard === null) {
             throw new HttpNotFoundException($request, $this->errItemNotFound);
         }
-        $initCard = ItemMaster::fromDBRow($row);
 
         /** @var list<UserCard> $initCards */
         $initCards = [];
