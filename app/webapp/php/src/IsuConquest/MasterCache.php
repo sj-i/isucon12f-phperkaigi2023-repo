@@ -4,6 +4,8 @@ namespace App\IsuConquest;
 use PDO;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\Adapter\PhpArrayAdapter;
+use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
+use Symfony\Component\Cache\CacheItem;
 
 class MasterCache
 {
@@ -19,15 +21,12 @@ class MasterCache
     /** @var array[] */
     private array $gachaItmMastersCache = [];
 
-    private readonly PhpArrayAdapter $cache;
+    private readonly PhpFilesAdapter $cache;
 
     public function __construct(
         private readonly PDO $db,
     ) {
-        $this->cache = new PhpArrayAdapter(
-            __DIR__ . '/../../var/cache/master.cache',
-            new FilesystemAdapter(),
-        );
+        $this->cache = new PhpFilesAdapter();
     }
 
     public function shouldRecache(): string
@@ -43,17 +42,37 @@ class MasterCache
 
     public function recache(string $master_version)
     {
-        $this->cache->warmUp([
-            'master_version' => $master_version,
-            'login_bonus_masters' => $this->db->query('SELECT * FROM login_bonus_masters')
-                ->fetchAll(PDO::FETCH_ASSOC),
-            'item_masters' => $this->db->query('SELECT * FROM item_masters')
-                ->fetchAll(PDO::FETCH_ASSOC),
-            'gacha_masters' => $this->db->query('SELECT * FROM gacha_masters ORDER BY display_order')
-                ->fetchAll(PDO::FETCH_ASSOC),
-            'gacha_item_masters' => $this->db->query('SELECT * FROM gacha_item_masters ORDER BY id ASC')
-                ->fetchAll(PDO::FETCH_ASSOC),
-        ]);
+        $this->cache->saveDeferred($this->cache->getItem('master_version')->set($master_version));
+        $this->cache->saveDeferred(
+            $this->cache->getItem('login_bonus_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM login_bonus_masters')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
+        $this->cache->saveDeferred(
+            $this->cache->getItem('item_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM item_masters')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
+        $this->cache->saveDeferred(
+            $this->cache->getItem('gacha_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM gacha_masters ORDER BY display_order')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
+        $this->cache->saveDeferred(
+            $this->cache->getItem('gacha_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM gacha_masters ORDER BY display_order')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
+        $this->cache->saveDeferred(
+            $this->cache->getItem('gacha_item_masters')
+                ->set(
+                    $this->db->query('SELECT * FROM gacha_item_masters ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC)
+                )
+        );
     }
 
     public function getLoginBonusMaster(int $requestAt): array
