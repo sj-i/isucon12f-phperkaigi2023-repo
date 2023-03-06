@@ -1244,16 +1244,8 @@ final class Handler
 
         // weightの合計値を算出
         $sum = 0;
-        try {
-            $stmt = $this->db->prepare('SELECT SUM(weight) FROM gacha_item_masters WHERE gacha_id=?');
-            $stmt->bindValue(1, $gachaID, PDO::PARAM_INT);
-            $stmt->execute();
-            $sum = $stmt->fetchColumn();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        if ($sum === false) {
-            throw new HttpNotFoundException($request);
+        foreach ($gachaItemList as $gachaItem) {
+            $sum += $gachaItem->weight;
         }
 
         // random値の導出 & 抽選
@@ -1293,24 +1285,29 @@ final class Handler
                 createdAt: $requestAt,
                 updatedAt: $requestAt,
             );
-            $query = 'INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
-            try {
-                $stmt = $this->db->prepare($query);
-                $stmt->bindValue(1, $present->id, PDO::PARAM_INT);
-                $stmt->bindValue(2, $present->userID, PDO::PARAM_INT);
-                $stmt->bindValue(3, $present->sentAt, PDO::PARAM_INT);
-                $stmt->bindValue(4, $present->itemType, PDO::PARAM_INT);
-                $stmt->bindValue(5, $present->itemID, PDO::PARAM_INT);
-                $stmt->bindValue(6, $present->amount, PDO::PARAM_INT);
-                $stmt->bindValue(7, $present->presentMessage);
-                $stmt->bindValue(8, $present->createdAt, PDO::PARAM_INT);
-                $stmt->bindValue(9, $present->updatedAt, PDO::PARAM_INT);
-                $stmt->execute();
-            } catch (PDOException $e) {
-                throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-            }
 
             $presents[] = $present;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($presents), '(?, ?, ?, ?, ?, ?, ?, ?, ?)'));
+        $query = 'INSERT INTO user_presents(id, user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES ' . $placeholders;
+        try {
+            $stmt = $this->db->prepare($query);
+            $position = 1;
+            foreach ($presents as $present) {
+                $stmt->bindValue($position++, $present->id, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->userID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->sentAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->itemType, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->itemID, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->amount, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->presentMessage);
+                $stmt->bindValue($position++, $present->createdAt, PDO::PARAM_INT);
+                $stmt->bindValue($position++, $present->updatedAt, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        } catch (PDOException $e) {
+            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
         // isuconをへらす
