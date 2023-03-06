@@ -487,19 +487,11 @@ final class Handler
     /**
      * obtainItem アイテム付与処理
      *
-     * @return array{list<int>, list<UserCard>, list<UserItem>}
      * @throws PDOException
      * @throws RuntimeException
      */
-    private function obtainItem(int $userID, int $itemID, int $itemType, int $obtainAmount, int $requestAt): array
+    private function obtainItem(int $userID, int $itemID, int $itemType, int $obtainAmount, int $requestAt): void
     {
-        /** @var list<int> $obtainCoins */
-        $obtainCoins = [];
-        /** @var list<UserCard> $obtainCards */
-        $obtainCards = [];
-        /** @var list<UserItem> $obtainItems */
-        $obtainItems = [];
-
         switch ($itemType) {
             case 1: // coin
                 $query = 'SELECT * FROM users WHERE id=?';
@@ -518,7 +510,6 @@ final class Handler
                 $stmt->bindValue(1, $totalCoin, PDO::PARAM_INT);
                 $stmt->bindValue(2, $userID, PDO::PARAM_INT);
                 $stmt->execute();
-                $obtainCoins[] = $obtainAmount;
                 break;
 
             case 2: // card(ハンマー)
@@ -554,7 +545,6 @@ final class Handler
                 $stmt->bindValue(7, $card->createdAt, PDO::PARAM_INT);
                 $stmt->bindValue(8, $card->updatedAt, PDO::PARAM_INT);
                 $stmt->execute();
-                $obtainCards[] = $card;
                 break;
 
             case 3:
@@ -608,15 +598,13 @@ final class Handler
                     $stmt->bindValue(3, $uitem->id, PDO::PARAM_INT);
                     $stmt->execute();
                 }
-
-                $obtainItems[] = $uitem;
                 break;
 
             default:
                 throw new RuntimeException($this->errInvalidItemType);
         }
 
-        return [$obtainCoins, $obtainCards, $obtainItems];
+        return;
     }
 
     /**
