@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2f01447baefb139d5e468f536dcfa970",
+    "content-hash": "790aeb3e2290c129b6868d519c6591b2",
     "packages": [
         {
             "name": "brick/math",
@@ -117,6 +117,65 @@
                 "source": "https://github.com/php-fig/http-message-util/tree/1.1.5"
             },
             "time": "2020-11-24T22:02:12+00:00"
+        },
+        {
+            "name": "godruoyi/php-snowflake",
+            "version": "2.2.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/godruoyi/php-snowflake.git",
+                "reference": "18ceb8365b5fbdcae3304b94b787172d881f41f0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/godruoyi/php-snowflake/zipball/18ceb8365b5fbdcae3304b94b787172d881f41f0",
+                "reference": "18ceb8365b5fbdcae3304b94b787172d881f41f0",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.2"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "~7|^8|^9"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Godruoyi\\Snowflake\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Godruoyi",
+                    "email": "g@godruoyi.com"
+                }
+            ],
+            "description": "An ID Generator for PHP based on Snowflake Algorithm (Twitter announced).",
+            "homepage": "https://github.com/godruoyi/php-snowflake",
+            "keywords": [
+                "Unique ID",
+                "laravel snowflake",
+                "order id",
+                "php snowflake",
+                "php unique id",
+                "snowflake algorithm",
+                "unique order id"
+            ],
+            "support": {
+                "issues": "https://github.com/godruoyi/php-snowflake/issues",
+                "source": "https://github.com/godruoyi/php-snowflake/tree/2.2.2"
+            },
+            "funding": [
+                {
+                    "url": "https://images.godruoyi.com/wechat.png",
+                    "type": "custom"
+                }
+            ],
+            "time": "2023-02-08T10:29:17+00:00"
         },
         {
             "name": "laravel/serializable-closure",
@@ -1631,8 +1690,8 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "ext-apfd": "*",
-        "php": "^8.1"
+        "php": "^8.1",
+        "ext-apfd": "*"
     },
     "platform-dev": [],
     "plugin-api-version": "2.3.0"

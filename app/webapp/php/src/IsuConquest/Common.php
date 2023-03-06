@@ -6,6 +6,7 @@ namespace App\IsuConquest;
 
 use Exception;
 use Fig\Http\Message\StatusCodeInterface;
+use Godruoyi\Snowflake\Snowflake;
 use JsonException;
 use JsonSerializable;
 use PDOException;
@@ -68,44 +69,9 @@ trait Common
      */
     private function generateID(): int
     {
-        $hasNewTransaction = false;
-        if (!$this->db->inTransaction()) {
-            $this->db->beginTransaction();
-            $hasNewTransaction = true;
-        }
-
-        try {
-            /** @var ?PDOException $updateErr */
-            $updateErr = null;
-            for ($i = 0; $i < 100; $i++) {
-                try {
-                    $this->db->exec('UPDATE id_generator SET id=LAST_INSERT_ID(id+1)');
-                } catch (PDOException $e) {
-                    if ($e->getCode() === 1213) {
-                        $updateErr = $e;
-                        continue;
-                    }
-                    throw $e;
-                }
-
-                $id =  $this->db->lastInsertId();
-                if ($id === false) {
-                    throw new RuntimeException('failed to generate id: ', $this->db->errorInfo()[2]);
-                }
-
-                if ($hasNewTransaction) {
-                    $this->db->commit();
-                }
-                return (int)$id;
-            }
-
-            throw new RuntimeException('failed to generate id: ' . $updateErr->getMessage(), previous: $updateErr);
-        } catch (PDOException | RuntimeException $e) {
-            if ($hasNewTransaction) {
-                $this->db->rollBack();
-            }
-            throw $e;
-        }
+        static $snowFlake = null;
+        $snowFlake ??= new Snowflake((int)\getenv('ISUCON_SNOWFLAKE_NODE_ID'), getmypid());
+        return (int)$snowFlake->id();
     }
 
     /**

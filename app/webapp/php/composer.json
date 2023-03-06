@@ -1,8 +1,9 @@
 {
     "name": "isucon/isucon-12-final",
     "require": {
-        "ext-apfd": "*",
         "php": "^8.1",
+        "ext-apfd": "*",
+        "godruoyi/php-snowflake": "^2.2",
         "monolog/monolog": "^3.1",
         "php-di/php-di": "^6.4",
         "ramsey/uuid": "^4.4",
