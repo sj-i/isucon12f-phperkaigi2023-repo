@@ -1032,9 +1032,7 @@ final class Handler
         // ガチャ排出アイテム取得
         /** @var list<GachaData> $gachaDataList */
         $gachaDataList = [];
-        $query = 'SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC';
         try {
-            $stmt = $this->db->prepare($query);
             foreach ($gachaMasterList as $v) {
                 /** @var list<GachaItemMaster> $gachaItem */
                 $gachaItem = $this->masterCache->getGachaItemMasterByID($v->id);
