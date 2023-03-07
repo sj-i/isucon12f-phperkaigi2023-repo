@@ -33,11 +33,12 @@ final class Handler
     private const SQL_DIRECTORY = __DIR__ . '/../../../sql/';
 
     public function __construct(
-        private readonly DatabaseManager $databaseManager,
-        private readonly Logger $logger,
+        private readonly DatabaseManager     $databaseManager,
+        private readonly Logger              $logger,
         private readonly HttpClientInterface $httpClient,
-        private readonly SettingsInterface $settings,
-        private readonly MasterCache $masterCache,
+        private readonly SettingsInterface   $settings,
+        private readonly MasterCache         $masterCache,
+        private readonly BanChecker          $banChecker,
     ) {
     }
 
@@ -203,16 +204,7 @@ final class Handler
      */
     private function checkBan(int $userID): bool
     {
-        $query = 'SELECT * FROM user_bans WHERE user_id=?';
-        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-        $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch();
-        if ($row === false) {
-            return false;
-        }
-
-        return true;
+        return $this->banChecker->isBan($userID);
     }
 
     /**
