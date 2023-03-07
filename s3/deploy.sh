@@ -14,4 +14,4 @@ sudo cp -f env.sh /home/isucon/env
 # ミドルウェア・Appの再起動
 sudo systemctl restart nginx --now
 sudo systemctl restart mysql
-sudo systemctl restart isuconquest.php
+sudo systemctl restart isuconquest.php --now

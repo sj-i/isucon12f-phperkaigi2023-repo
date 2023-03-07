@@ -5,12 +5,16 @@ sudo cp -f etc/mysql/mysql.conf.d/mysqld.cnf /etc/mysql/mysql.conf.d/mysqld.cnf
 sudo cp -f etc/nginx/nginx.conf /etc/nginx/nginx.conf
 sudo cp -f etc/nginx/sites-available/isuconquest-php.conf /etc/nginx/sites-available/isuconquest-php.conf
 sudo cp -rf etc/php/etc/. /home/isucon/local/php/etc/.
+sudo cp -rf etc/php/etc/isuconquest.php.service /etc/systemd/system/isuconquest.php.service
+sudo cp -rf etc/php/.rr.yaml /home/isucon/webapp/php/.rr.yaml
+sudo systemctl daemon-reload
 sudo nginx -t
 
 # アプリケーションのビルド
 cp -rf ../app/webapp/. /home/isucon/webapp/.
 cd /home/isucon/webapp/php
 php composer.phar install
+yes | php vendor/bin/rr get-binary
 
 # ミドルウェア・Appの再起動
 # sudo systemctl restart mysql

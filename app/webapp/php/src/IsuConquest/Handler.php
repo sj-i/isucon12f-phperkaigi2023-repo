@@ -665,7 +665,7 @@ final class Handler
     {
         // parse body
         try {
-            $req = new CreateUserRequest($request->getBody()->getContents());
+            $req = new CreateUserRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -874,7 +874,7 @@ final class Handler
     public function login(Request $request, Response $response): Response
     {
         try {
-            $req = new LoginRequest($request->getBody()->getContents());
+            $req = new LoginRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -1102,8 +1102,10 @@ final class Handler
      * drawGacha ガチャを引く
      * POST /user/{userID}/gacha/draw/{gachaTypeID}/{n}
      */
-    public function drawGacha(Request $request, Response $response, array $params): Response
+    public function drawGacha(Request $request, Response $response): Response
     {
+        $attributes = $request->getAttributes();
+        $params = isset($attributes["__route__"]) ? ($attributes["__route__"])->getArguments() : [];
         try {
             $userID = $this->getUserID($request);
         } catch (RuntimeException $e) {
@@ -1126,7 +1128,7 @@ final class Handler
         }
 
         try {
-            $req = new DrawGachaRequest($request->getBody()->getContents());
+            $req = new DrawGachaRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -1281,8 +1283,10 @@ final class Handler
      * listPresent プレゼント一覧
      * GET /user/{userID}/present/index/{n}
      */
-    public function listPresent(Request $request, Response $response, array $params): Response
+    public function listPresent(Request $request, Response $response): Response
     {
+        $attributes = $request->getAttributes();
+        $params = isset($attributes["__route__"]) ? ($attributes["__route__"])->getArguments() : [];
         $nStr = $params['n'] ?? '';
         $n = filter_var($nStr, FILTER_VALIDATE_INT);
         if (!is_int($n)) {
@@ -1339,7 +1343,7 @@ final class Handler
     {
         // read body
         try {
-            $req = new ReceivePresentRequest($request->getBody()->getContents());
+            $req = new ReceivePresentRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -1554,8 +1558,11 @@ final class Handler
      * addExpToCard 装備強化
      * POST /user/{userID}/card/addexp/{cardID}
      */
-    public function addExpToCard(Request $request, Response $response, array $params): Response
+    public function addExpToCard(Request $request, Response $response): Response
     {
+        $attributes = $request->getAttributes();
+        $params = isset($attributes["__route__"]) ? ($attributes["__route__"])->getArguments() : [];
+        $request->getAttribute('cardID');
         $cardIDStr = $params['cardID'] ?? '';
         $cardID = filter_var($cardIDStr, FILTER_VALIDATE_INT);
         if (!is_int($cardID)) {
@@ -1570,7 +1577,7 @@ final class Handler
 
         // read body
         try {
-            $req = new AddExpToCardRequest($request->getBody()->getContents());
+            $req = new AddExpToCardRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -1638,6 +1645,7 @@ final class Handler
         try {
             $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
             foreach ($req->items as $v) {
+                $v = (object)$v;
                 $stmt->bindValue(1, $v->id, PDO::PARAM_INT);
                 $stmt->bindValue(2, $userID, PDO::PARAM_INT);
                 $stmt->execute();
@@ -1753,7 +1761,7 @@ final class Handler
 
         // read body
         try {
-            $req = new UpdateDeckRequest($request->getBody()->getContents());
+            $req = new UpdateDeckRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -1862,7 +1870,7 @@ final class Handler
 
         // parse body
         try {
-            $req = new RewardRequest($request->getBody()->getContents());
+            $req = new RewardRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }

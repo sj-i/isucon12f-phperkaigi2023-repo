@@ -13,12 +13,12 @@ return function (ContainerBuilder $containerBuilder) {
     $containerBuilder->addDefinitions([
         SettingsInterface::class => function () {
             return new Settings([
-                'logError'            => true,
-                'logErrorDetails'     => true,
+                'logError'            => false,
+                'logErrorDetails'     => false,
                 'logger' => [
                     'name' => 'isu-conquest',
-                    'path' => 'php://stdout',
-                    'level' => LogLevel::Debug,
+                    'path' => 'php://stderr',
+                    'level' => LogLevel::Emergency,
                 ],
                 'database' => [
                     'host' => getenv('ISUCON_DB_HOST') ?: '127.0.0.1',

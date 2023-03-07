@@ -20,10 +20,8 @@ class AdminLoginRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->userID = $data->userId;
         $this->password = $data->password;
     }

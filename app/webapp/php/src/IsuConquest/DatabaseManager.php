@@ -43,6 +43,15 @@ class DatabaseManager
         ]);
     }
 
+    public function cleanup(): void
+    {
+        foreach ($this->dbs as $db) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+        }
+    }
+
     public function initDatabase(): void
     {
         foreach (self::DB_HOSTS as $host) {

@@ -99,7 +99,7 @@ final class AdminHandler
     public function adminLogin(Request $request, Response $response): Response
     {
         try {
-            $req = new AdminLoginRequest($request->getBody()->getContents());
+            $req = new AdminLoginRequest((object)$request->getParsedBody());
         } catch (Exception $e) {
             throw new HttpBadRequestException($request, $e->getMessage(), $e);
         }
@@ -347,7 +347,7 @@ final class AdminHandler
      */
     public function adminUpdateMasterOne(Request $request, Response $response): Response
     {
-        $db = $this->databaseManager->connectDatabase($request->getUri()->getHost());
+        $db = $this->databaseManager->connectDatabase(getHostByName(getHostName()));
         $db->beginTransaction();
         // version master
         try {

@@ -29,10 +29,8 @@ class CreateUserRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
         $this->platformType = $data->platformType;
     }
@@ -70,10 +68,8 @@ class LoginRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
         $this->userID = $data->userId;
     }
@@ -147,10 +143,8 @@ class DrawGachaRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
         $this->oneTimeToken = $data->oneTimeToken;
     }
@@ -201,10 +195,8 @@ class ReceivePresentRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
         $this->presentIDs = $data->presentIds;
     }
@@ -258,10 +250,8 @@ class AddExpToCardRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
         $this->oneTimeToken = $data->oneTimeToken;
         $this->items = $data->items;
@@ -366,10 +356,8 @@ class UpdateDeckRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
         $this->cardIDs = $data->cardIds;
     }
@@ -395,10 +383,8 @@ class RewardRequest
      * @throws JsonException
      * @throws TypeError
      */
-    public function __construct(string $json)
+    public function __construct(object $data)
     {
-        $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
-
         $this->viewerID = $data->viewerId;
     }
 }
