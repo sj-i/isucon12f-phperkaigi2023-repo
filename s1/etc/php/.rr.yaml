@@ -14,12 +14,12 @@ http:
       - .php
       - .htaccess
   pool:
-    num_workers: 10
+    num_workers: 20
     supervisor:
       max_worker_memory: 100
 jobs:
   pool:
-    num_workers: 10
+    num_workers: 0
     max_worker_memory: 100
   consume: {  }
 kv:
