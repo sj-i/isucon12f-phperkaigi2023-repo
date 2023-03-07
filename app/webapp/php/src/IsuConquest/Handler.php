@@ -39,6 +39,7 @@ final class Handler
         private readonly SettingsInterface   $settings,
         private readonly MasterCache         $masterCache,
         private readonly BanChecker          $banChecker,
+        private readonly ViewerIDChecker     $viewerIDChecker,
     ) {
     }
 
@@ -186,13 +187,7 @@ final class Handler
      */
     private function checkViewerID(int $userID, string $viewerID): void
     {
-        $query = 'SELECT * FROM user_devices WHERE user_id=? AND platform_id=?';
-
-        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-        $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-        $stmt->bindValue(2, $viewerID);
-        $stmt->execute();
-        if ($stmt->fetch() === false) {
+        if (!$this->viewerIDChecker->check($userID, $viewerID)) {
             throw new RuntimeException($this->errUserDeviceNotFound);
         }
     }
