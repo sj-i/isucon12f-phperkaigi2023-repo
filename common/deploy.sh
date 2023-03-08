@@ -7,6 +7,7 @@ sudo cp -f etc/nginx/sites-available/isuconquest-php.conf /etc/nginx/sites-avail
 sudo cp -rf etc/php/etc/. /home/isucon/local/php/etc/.
 sudo cp -rf etc/php/etc/isuconquest.php.service /etc/systemd/system/isuconquest.php.service
 sudo cp -rf etc/php/.rr.yaml /home/isucon/webapp/php/.rr.yaml
+sudo cp -f etc/redis/redis.conf /etc/redis/redis.conf
 sudo systemctl daemon-reload
 sudo nginx -t
 

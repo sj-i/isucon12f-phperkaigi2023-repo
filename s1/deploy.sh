@@ -16,3 +16,4 @@ sudo cp -rf etc/php/.rr.yaml /home/isucon/webapp/php/.rr.yaml
 sudo systemctl restart nginx --now
 sudo systemctl disable mysql --now
 sudo systemctl restart isuconquest.php --now
+sudo systemctl restart redis --now

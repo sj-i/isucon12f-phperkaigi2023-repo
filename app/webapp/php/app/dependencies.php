@@ -43,6 +43,12 @@ return function (ContainerBuilder $containerBuilder) {
                 PDO::ATTR_PERSISTENT => true,
             ]);
         },
-        HttpClientInterface::class => autowire(CurlHttpClient::class)
+        HttpClientInterface::class => autowire(CurlHttpClient::class),
+        Redis::class => function (ContainerInterface $c) {
+            $redis = new \Redis();
+            $redis->connect(host: '/var/run/redis/redis-server.sock', port: -1);
+            $redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_IGBINARY);
+            return $redis;
+        }
     ]);
 };
