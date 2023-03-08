@@ -73,7 +73,7 @@ class DatabaseManager
         if (empty($this->dbs)) {
             $this->initDatabase();
         }
-        return $this->dbs[$id % count($this->dbs)];
+        return $this->dbs[($id + ($id >> 12)) % count($this->dbs)];
     }
 
     public function adminDatabase(): PDO
