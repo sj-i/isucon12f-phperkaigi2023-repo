@@ -29,7 +29,7 @@ class AdminLoginRequest
 
 class AdminLoginResponse implements JsonSerializable
 {
-    public function __construct(public Session $adminSession)
+    public function __construct(public AdminSession $adminSession)
     {
     }
 

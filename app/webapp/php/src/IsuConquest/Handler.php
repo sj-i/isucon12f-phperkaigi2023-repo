@@ -14,6 +14,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\RequestHandlerInterface as RequestHandler;
 use Psr\Log\LoggerInterface as Logger;
+use Redis;
 use RuntimeException;
 use Slim\Exception\HttpBadRequestException;
 use Slim\Exception\HttpException;
@@ -40,6 +41,7 @@ final class Handler
         private readonly MasterCache         $masterCache,
         private readonly BanChecker          $banChecker,
         private readonly ViewerIDChecker     $viewerIDChecker,
+        private readonly SessionStore        $sessionStore,
     ) {
     }
 
@@ -110,33 +112,13 @@ final class Handler
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
 
-        $query = 'SELECT * FROM user_sessions WHERE session_id=? AND deleted_at IS NULL';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($sessionUserID)->prepare($query);
-            $stmt->execute([$sessID]);
-            $row = $stmt->fetch();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        if ($row === false) {
+        $userSession = $this->sessionStore->getSession($sessID);
+        if (is_null($userSession)) {
             throw new HttpUnauthorizedException($request, $this->errUnauthorized);
         }
-        $userSession = Session::fromDBRow($row);
 
         if ($userSession->userID !== $userID) {
             throw new HttpForbiddenException($request, $this->errForbidden);
-        }
-
-        if ($userSession->expiredAt < $requestAt) {
-            $query = 'UPDATE user_sessions SET deleted_at=? WHERE session_id=?';
-            try {
-                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-                $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-                $stmt->execute();
-            } catch (PDOException $e) {
-                throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-            }
-            throw new HttpUnauthorizedException($request, $this->errExpiredSession);
         }
 
         // next
@@ -815,32 +797,15 @@ final class Handler
 
         // generate session
         try {
-            $sID = $this->generateID();
             $sessID = $this->generateUUID();
         } catch (Exception $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
         $sess = new Session(
-            id: $sID,
             userID: $user->id,
             sessionID: "{$sessID}::{$user->id}",
-            createdAt: $requestAt,
-            updatedAt: $requestAt,
-            expiredAt: $requestAt + 86400,
         );
-        $query = 'INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($uID)->prepare($query);
-            $stmt->bindValue(1, $sess->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $sess->userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $sess->sessionID);
-            $stmt->bindValue(4, $sess->createdAt, PDO::PARAM_INT);
-            $stmt->bindValue(5, $sess->updatedAt, PDO::PARAM_INT);
-            $stmt->bindValue(6, $sess->expiredAt, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
+        $this->sessionStore->setSession($sess);
 
         $this->databaseManager->selectDatabase($uID)->commit();
 
@@ -908,43 +873,16 @@ final class Handler
 
         $this->databaseManager->selectDatabase($user->id)->beginTransaction();
 
-        // sessionを更新
-        $query = 'UPDATE user_sessions SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
         try {
-            $stmt = $this->databaseManager->selectDatabase($user->id)->prepare($query);
-            $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(2, $req->userID, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        try {
-            $sID = $this->generateID();
             $sessID = $this->generateUUID();
         } catch (Exception $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
         $sess = new Session(
-            id: $sID,
             userID: $req->userID,
             sessionID: "{$sessID}::{$user->id}",
-            createdAt: $requestAt,
-            updatedAt: $requestAt,
-            expiredAt: $requestAt + 86400,
         );
-        $query = 'INSERT INTO user_sessions(id, user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?)';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($user->id)->prepare($query);
-            $stmt->bindValue(1, $sess->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $sess->userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $sess->sessionID);
-            $stmt->bindValue(4, $sess->createdAt, PDO::PARAM_INT);
-            $stmt->bindValue(5, $sess->updatedAt, PDO::PARAM_INT);
-            $stmt->bindValue(6, $sess->expiredAt, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
+        $this->sessionStore->setSession($sess);
 
         // すでにログインしているユーザはログイン処理をしない
         if ($this->isCompleteTodayLogin($user->lastActivatedAt, $requestAt)) {

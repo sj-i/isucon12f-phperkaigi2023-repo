@@ -67,7 +67,7 @@ final class AdminHandler
         if ($row === false) {
             throw new HttpUnauthorizedException($request, $this->errUnauthorized);
         }
-        $adminSession = Session::fromDBRow($row);
+        $adminSession = AdminSession::fromDBRow($row);
 
         try {
             $requestAt = $this->getRequestTime($request);
@@ -160,7 +160,7 @@ final class AdminHandler
         } catch (Exception $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
-        $sess = new Session(
+        $sess = new AdminSession(
             id: $sID,
             userID: $req->userID,
             sessionID: $sessID,

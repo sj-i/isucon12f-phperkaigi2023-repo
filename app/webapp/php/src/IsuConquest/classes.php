@@ -897,6 +897,33 @@ class UserPresentAllReceivedHistory implements JsonSerializable
 class Session implements JsonSerializable
 {
     public function __construct(
+        public int $userID,
+        public string $sessionID,
+    ) {
+    }
+
+    public static function fromDBRow(array $row): self
+    {
+        return new self(
+            $row['user_id'],
+            $row['session_id'],
+        );
+    }
+
+    public function jsonSerialize(): array
+    {
+        $data = [
+            'userId' => $this->userID,
+            'sessionId' => $this->sessionID,
+        ];
+
+        return $data;
+    }
+}
+
+class AdminSession implements JsonSerializable
+{
+    public function __construct(
         public int $id,
         public int $userID,
         public string $sessionID,
@@ -938,6 +965,7 @@ class Session implements JsonSerializable
         return $data;
     }
 }
+
 
 class UserOneTimeToken
 {
