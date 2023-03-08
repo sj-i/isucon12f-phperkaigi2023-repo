@@ -610,6 +610,7 @@ final class Handler
         foreach ($responses as $responseFromDb) {
             $responseFromDb->getContent();
         }
+
         return $this->successResponse($response, new InitializeResponse(
             language: 'php',
         ));
@@ -636,8 +637,6 @@ final class Handler
             $out = stream_get_contents($fp);
             throw new HttpInternalServerErrorException($request, sprintf('Failed to initialize: %s', $out));
         }
-
-        $this->masterCache->shouldRecache($this->databaseManager->adminDatabase());
 
         return $this->successResponse($response, new InitializeResponse(
             language: 'php',
