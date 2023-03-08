@@ -29,6 +29,7 @@ final class AdminHandler
         private readonly HttpClientInterface $httpClient,
         private readonly MasterCache $masterCache,
         private readonly Logger $logger,
+        private readonly BanChecker $banChecker,
     ) {
     }
 
@@ -937,23 +938,7 @@ final class AdminHandler
         }
         $user = User::fromDBRow($row);
 
-        try {
-            $banID = $this->generateID();
-        } catch (Exception $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        $query = 'INSERT user_bans(id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE updated_at = ?';
-        try {
-            $stmt = $targetDB->prepare($query);
-            $stmt->bindValue(1, $banID, PDO::PARAM_INT);
-            $stmt->bindValue(2, $userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(4, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(5, $requestAt, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
+        $this->banChecker->ban($userID);
 
         return $this->successResponse($response, new AdminBanUserResponse(
             user: $user,
