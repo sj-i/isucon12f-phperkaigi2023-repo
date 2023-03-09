@@ -24,6 +24,8 @@ class MasterCache
     /** @var array[] */
     private array $loginBonusRewardMastersCache = [];
 
+    private string $master_version = 'unknown';
+
     private readonly PhpFilesAdapter $cache;
 
     public function __construct(
@@ -37,12 +39,24 @@ class MasterCache
         $row = $stmt->fetch();
         $cached = $this->cache->getItem('master_version');
         if (!$cached->isHit() or $row['master_version'] !== $cached->get()) {
-            $this->recache($db, $row['master_version']);
+            $this->recacheDisk($db, $row['master_version']);
+        }
+        if ($this->master_version !== $row['master_version']) {
+            $this->itemMastersCache = [];
+            $this->loginBonusMastersCache = [];
+            $this->gachaMastersCache = [];
+            $this->gachaItemMastersCache = [];
+            $this->presentAllMastersCache = [];
+            $this->loginBonusRewardMastersCache = [];
+            $this->gachaItemMasterItemCache = [];
+            $this->presentAllMasterItemCache = [];
+            $this->loginBonusRewardMastersItemCache = [];
+            $this->master_version = $row['master_version'];
         }
         return $row['master_version'];
     }
 
-    public function recache(PDO $db, string $master_version)
+    public function recacheDisk(PDO $db, string $master_version)
     {
         $master_version_cache = $this->cache->getItem('master_version');
         $login_bonus_masters_cache = $this->cache->getItem('login_bonus_masters');
@@ -140,6 +154,7 @@ class MasterCache
         return null;
     }
 
+    private array $gachaItemMasterItemCache = [];
     /** @return GachaItemMaster[] */
     public function getGachaItemMasterByID(int $id): array
     {
@@ -147,14 +162,19 @@ class MasterCache
             $this->gachaItemMastersCache = $this->cache->getItem('gacha_item_masters')->get();
         }
         $result = [];
+        if (isset($this->gachaItemMasterItemCache[$id])) {
+            return $this->gachaItemMasterItemCache[$id];
+        }
         foreach ($this->gachaItemMastersCache as $gachaItemMaster) {
             if ($gachaItemMaster['gacha_id'] === $id) {
                 $result[] = GachaItemMaster::fromDBRow($gachaItemMaster);
             }
         }
+        $this->gachaItemMasterItemCache[$id] = $result;
         return $result;
     }
 
+    private array $presentAllMasterItemCache = [];
     /** @return PresentAllMaster[] */
     public function getPresentAllMaster(int $requestAt): array
     {
@@ -165,21 +185,32 @@ class MasterCache
         $result = [];
         foreach ($this->presentAllMastersCache as $presentAllMaster) {
             if ($presentAllMaster['registered_start_at'] <= $requestAt and $requestAt <= $presentAllMaster['registered_end_at']) {
-                $result[] = PresentAllMaster::fromDBRow($presentAllMaster);
+                $id = $presentAllMaster['id'];
+                if (isset($this->presentAllMasterItemCache[$id])) {
+                    $result[] = $this->presentAllMasterItemCache[$id];
+                } else {
+                    $item = PresentAllMaster::fromDBRow($presentAllMaster);
+                    $this->presentAllMasterItemCache[$presentAllMaster['id']] = $item;
+                    $result[] = $item;
+                }
             }
         }
         return $result;
     }
 
+    private array $loginBonusRewardMastersItemCache = [];
     public function getLoginBonusRewardMasterByIDAndSequence(int $loginBonusID, int $rewardSequence): ?LoginBonusRewardMaster
     {
         if (!$this->loginBonusRewardMastersCache) {
             $this->loginBonusRewardMastersCache = $this->cache->getItem('login_bonus_reward_masters')->get();
         }
 
+        if (isset($this->loginBonusRewardMastersItemCache[$loginBonusID][$rewardSequence])) {
+            return $this->loginBonusRewardMastersItemCache[$loginBonusID][$rewardSequence];
+        }
         foreach ($this->loginBonusRewardMastersCache as $loginBonusRewardMaster) {
             if ($loginBonusRewardMaster['login_bonus_id'] === $loginBonusID and $loginBonusRewardMaster['reward_sequence'] === $rewardSequence) {
-                return LoginBonusRewardMaster::fromDBRow($loginBonusRewardMaster);
+                return $this->loginBonusRewardMastersItemCache[$loginBonusID][$rewardSequence] = LoginBonusRewardMaster::fromDBRow($loginBonusRewardMaster);
             }
         }
         return null;
