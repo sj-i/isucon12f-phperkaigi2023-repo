@@ -335,6 +335,8 @@ final class AdminHandler
             $json = $adminResponse->getContent();
         }
 
+        $this->masterCache->shouldRecache($this->databaseManager->adminDatabase());
+
         return $this->successResponse($response, new AdminUpdateMasterResponse(
             versionMaster: new VersionMaster(...json_decode($json, true)['versionMaster']),
         ));
@@ -736,7 +738,6 @@ final class AdminHandler
         $activeMaster = VersionMaster::fromDBRow($row);
 
         $db->commit();
-        $this->masterCache->shouldRecache($db);
         return $this->successResponse($response, new AdminUpdateMasterResponse(
             versionMaster: $activeMaster,
         ));
