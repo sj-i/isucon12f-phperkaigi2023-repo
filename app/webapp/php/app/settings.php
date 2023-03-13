@@ -16,9 +16,9 @@ return function (ContainerBuilder $containerBuilder) {
                 'logError'            => false,
                 'logErrorDetails'     => false,
                 'logger' => [
-                    'name' => 'isu-conquest',
+                    'name' => 'isu-con  quest',
                     'path' => 'php://stderr',
-                    'level' => LogLevel::Emergency,
+                    'level' => LogLevel::Debug,
                 ],
                 'database' => [
                     'host' => getenv('ISUCON_DB_HOST') ?: '127.0.0.1',
