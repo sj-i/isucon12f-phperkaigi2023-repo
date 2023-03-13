@@ -42,6 +42,7 @@ final class Handler
         private readonly BanChecker          $banChecker,
         private readonly ViewerIDChecker     $viewerIDChecker,
         private readonly SessionStore        $sessionStore,
+        private readonly OneTimeTokenStore   $oneTimeTokenStore,
     ) {
     }
 
@@ -133,32 +134,10 @@ final class Handler
      */
     private function checkOneTimeToken(int $userID, string $token, int $tokenType, int $requestAt): void
     {
-        $query = 'SELECT * FROM user_one_time_tokens WHERE token=? AND token_type=? AND deleted_at IS NULL';
-        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-        $stmt->bindValue(1, $token);
-        $stmt->bindValue(2, $tokenType, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch();
-        if ($row === false) {
+        $token = $this->oneTimeTokenStore->get($userID, $token, $tokenType);
+        if ($token === null) {
             throw new RuntimeException($this->errInvalidToken);
         }
-        $tk = UserOneTimeToken::fromDBRow($row);
-
-        if ($tk->expiredAt < $requestAt) {
-            $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE token=?';
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-            $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(2, $token);
-            $stmt->execute();
-            throw new RuntimeException($this->errInvalidToken);
-        }
-
-        // 使ったトークンを失効する
-        $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE token=?';
-        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-        $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-        $stmt->bindValue(2, $token);
-        $stmt->execute();
     }
 
     /**
@@ -1006,47 +985,16 @@ final class Handler
         }
 
         // generate one time token
-        $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-            $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(2, $userID, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        try {
-            $tID = $this->generateID();
-            $tk = $this->generateUUID();
-        } catch (Exception $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        $token = new UserOneTimeToken(
-            id: $tID,
-            userID: $userID,
-            token: $tk,
-            tokenType: 1,
-            createdAt: $requestAt,
-            updatedAt: $requestAt,
-            expiredAt: $requestAt + 600,
+        $token = $this->generateUUID();
+        $this->oneTimeTokenStore->generate(
+            $userID,
+            $token,
+            1,
+            600,
         );
-        $query = 'INSERT INTO user_one_time_tokens(id, user_id, token, token_type, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-            $stmt->bindValue(1, $token->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $token->userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $token->token);
-            $stmt->bindValue(4, $token->tokenType, PDO::PARAM_INT);
-            $stmt->bindValue(5, $token->createdAt, PDO::PARAM_INT);
-            $stmt->bindValue(6, $token->updatedAt, PDO::PARAM_INT);
-            $stmt->bindValue(7, $token->expiredAt, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
 
         return $this->successResponse($response, new ListGachaResponse(
-            oneTimeToken: $token->token,
+            oneTimeToken: $token,
             gachas: $gachaDataList,
         ));
     }
@@ -1460,47 +1408,16 @@ final class Handler
         }
 
         // generate one time token
-        $query = 'UPDATE user_one_time_tokens SET deleted_at=? WHERE user_id=? AND deleted_at IS NULL';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-            $stmt->bindValue(1, $requestAt, PDO::PARAM_INT);
-            $stmt->bindValue(2, $userID, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        try {
-            $tID = $this->generateID();
-            $tk = $this->generateUUID();
-        } catch (Exception $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
-        $token = new UserOneTimeToken(
-            id: $tID,
-            userID: $userID,
-            token: $tk,
-            tokenType: 2,
-            createdAt: $requestAt,
-            updatedAt: $requestAt,
-            expiredAt: $requestAt + 600,
+        $token = $this->generateUUID();
+        $this->oneTimeTokenStore->generate(
+            $userID,
+            $token,
+            2,
+            600
         );
-        $query = 'INSERT INTO user_one_time_tokens(id, user_id, token, token_type, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
-        try {
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-            $stmt->bindValue(1, $token->id, PDO::PARAM_INT);
-            $stmt->bindValue(2, $token->userID, PDO::PARAM_INT);
-            $stmt->bindValue(3, $token->token);
-            $stmt->bindValue(4, $token->tokenType, PDO::PARAM_INT);
-            $stmt->bindValue(5, $token->createdAt, PDO::PARAM_INT);
-            $stmt->bindValue(6, $token->updatedAt, PDO::PARAM_INT);
-            $stmt->bindValue(7, $token->expiredAt, PDO::PARAM_INT);
-            $stmt->execute();
-        } catch (PDOException $e) {
-            throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
-        }
 
         return $this->successResponse($response, new ListItemResponse(
-            oneTimeToken: $token->token,
+            oneTimeToken: $token,
             items: $itemList,
             user: $user,
             cards: $cardList,
