@@ -45,8 +45,9 @@ return function (ContainerBuilder $containerBuilder) {
         },
         HttpClientInterface::class => autowire(CurlHttpClient::class),
         Redis::class => function (ContainerInterface $c) {
+            $redisSettings = $c->get(SettingsInterface::class)->get('redis');
             $redis = new \Redis();
-            $redis->connect(host: '/var/run/redis/redis-server.sock', port: -1);
+            $redis->connect(host: $redisSettings['host'], port: (int)$redisSettings['port']);
             $redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_IGBINARY);
             return $redis;
         }

@@ -27,6 +27,10 @@ return function (ContainerBuilder $containerBuilder) {
                     'user' => getenv('ISUCON_DB_USER') ?: 'isucon',
                     'password' => getenv('ISUCON_DB_PASSWORD') ?: 'isucon',
                 ],
+                'redis' => [
+                    'host' => getenv('ISUCON_REDIS_HOST'),
+                    'port' => getenv('ISUCON_REDIS_PORT'),
+                ]
             ]);
         }
     ]);
