@@ -14,7 +14,7 @@ http:
       - .php
       - .htaccess
   pool:
-    num_workers: 20
+    num_workers: 25
     supervisor:
       max_worker_memory: 100
 jobs:
