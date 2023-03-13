@@ -714,6 +714,7 @@ final class Handler
         } catch (PDOException $e) {
             throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
         }
+        $this->viewerIDChecker->setCache($user->id, $req->viewerID);
 
         // 初期デッキ付与
         $initCard = $this->masterCache->getItemMasterById(2);
@@ -1125,7 +1126,7 @@ final class Handler
             } catch (Exception $e) {
                 throw new HttpInternalServerErrorException($request, $e->getMessage(), $e);
             }
-            $present = new UserPresent(
+                $present = new UserPresent(
                 id: $pID,
                 userID: $userID,
                 sentAt: $requestAt,
