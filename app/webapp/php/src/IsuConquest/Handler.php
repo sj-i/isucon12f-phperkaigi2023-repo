@@ -251,79 +251,108 @@ final class Handler
         /** @var list<LoginBonusMaster> $loginBonuses */
         $loginBonuses = $this->masterCache->getLoginBonusMaster($requestAt);
 
+        if (!$loginBonuses) {
+            return [];
+        }
+
+        $loginBonusIds = [];
+        foreach ($loginBonuses as $bonus) {
+            $loginBonusIds[] = $bonus->id;
+        }
+        $placeholders = implode(',', array_fill(0, count($loginBonusIds), '?'));
+        $query = "SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id IN ({$placeholders})";
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
+        $stmt->bindValue(1, $userID, PDO::PARAM_INT);
+        $position = 2;
+        foreach ($loginBonusIds as $loginBonusId) {
+            $stmt->bindValue($position++, $loginBonusId, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $progress = [];
+        while ($row = $stmt->fetch()){
+            $userBonus = UserLoginBonus::fromDBRow($row);
+            $progress[$userBonus->loginBonusID] = $userBonus;
+        }
+
         /** @var list<UserLoginBonus> $sendLoginBonuses */
         $sendLoginBonuses = [];
-
+        $rewards = [];
         foreach ($loginBonuses as $bonus) {
-            $initBonus = false;
             // ボーナスの進捗取得
-            $query = 'SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?';
-            $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-            $stmt->bindValue(1, $userID, PDO::PARAM_INT);
-            $stmt->bindValue(2, $bonus->id, PDO::PARAM_INT);
-            $stmt->execute();
-            $row = $stmt->fetch();
-            if ($row === false) {
-                $initBonus = true;
+            if (!isset($progress[$bonus->id])) {
                 $ubID = $this->generateID();
-                $userBonus = new UserLoginBonus( // ボーナス初期化
+                $progress[$bonus->id] = $userBonus = new UserLoginBonus( // ボーナス初期化
                     id: $ubID,
                     userID: $userID,
                     loginBonusID: $bonus->id,
-                    lastRewardSequence: 0,
+                    lastRewardSequence: 1,
                     loopCount: 1,
                     createdAt: $requestAt,
                     updatedAt: $requestAt,
                 );
             } else {
-                $userBonus = UserLoginBonus::fromDBRow($row);
-            }
-
-            // ボーナス進捗更新
-            if ($userBonus->lastRewardSequence < $bonus->columnCount) {
-                $userBonus->lastRewardSequence++;
-            } else {
-                if ($bonus->looped) {
-                    $userBonus->loopCount += 1;
-                    $userBonus->lastRewardSequence = 1;
+                $userBonus = $progress[$bonus->id];
+                // ボーナス進捗更新
+                if ($userBonus->lastRewardSequence < $bonus->columnCount) {
+                    $userBonus->lastRewardSequence++;
                 } else {
-                    // 上限まで付与完了
-                    continue;
+                    if ($bonus->looped) {
+                        $userBonus->loopCount += 1;
+                        $userBonus->lastRewardSequence = 1;
+                    } else {
+                        // 上限まで付与完了
+                        continue;
+                    }
                 }
+                $userBonus->updatedAt = $requestAt;
             }
-            $userBonus->updatedAt = $requestAt;
+            $sendLoginBonuses[] = $userBonus;
 
             // 今回付与するリソース取得
             $rewardItem = $this->masterCache->getLoginBonusRewardMasterByIDAndSequence($bonus->id, $userBonus->lastRewardSequence);
             if (is_null($rewardItem)) {
+                fwrite(STDERR, json_encode([$bonus->id, $userBonus->lastRewardSequence]));
                 throw new RuntimeException($this->errLoginBonusRewardNotFound);
             }
-
-            $this->obtainItem($userID, $rewardItem->itemID, $rewardItem->itemType, $rewardItem->amount, $requestAt);
-
-            // 進捗の保存
-            if ($initBonus) {
-                $query = 'INSERT INTO user_login_bonuses(id, user_id, login_bonus_id, last_reward_sequence, loop_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)';
-                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-                $stmt->bindValue(1, $userBonus->id, PDO::PARAM_INT);
-                $stmt->bindValue(2, $userBonus->userID, PDO::PARAM_INT);
-                $stmt->bindValue(3, $userBonus->loginBonusID, PDO::PARAM_INT);
-                $stmt->bindValue(4, $userBonus->lastRewardSequence, PDO::PARAM_INT);
-                $stmt->bindValue(5, $userBonus->loopCount, PDO::PARAM_INT);
-                $stmt->bindValue(6, $userBonus->createdAt, PDO::PARAM_INT);
-                $stmt->bindValue(7, $userBonus->updatedAt, PDO::PARAM_INT);
-                $stmt->execute();
-            } else {
-                $query = 'UPDATE user_login_bonuses SET last_reward_sequence=?, loop_count=?, updated_at=? WHERE id=?';
-                $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
-                $stmt->bindValue(1, $userBonus->lastRewardSequence, PDO::PARAM_INT);
-                $stmt->bindValue(2, $userBonus->loopCount, PDO::PARAM_INT);
-                $stmt->bindValue(3, $userBonus->updatedAt, PDO::PARAM_INT);
-                $stmt->bindValue(4, $userBonus->id, PDO::PARAM_INT);
-                $stmt->execute();
+            $rewards[] = $rewardItem;
+        }
+        // 進捗の保存
+        $placeholders = implode(',', array_fill(0, count($progress), '(?, ?, ?, ?, ?, ?, ?)'));
+        $query = "INSERT INTO user_login_bonuses(id, user_id, login_bonus_id, last_reward_sequence, loop_count, created_at, updated_at) VALUES {$placeholders} ON DUPLICATE KEY UPDATE id = VALUES(id), user_id = VALUES(user_id), login_bonus_id = VALUES(login_bonus_id), last_reward_sequence = VALUES(last_reward_sequence), loop_count = VALUES(loop_count), created_at = VALUES(created_at), updated_at = VALUES(updated_at)";
+        $stmt = $this->databaseManager->selectDatabase($userID)->prepare($query);
+        $position = 1;
+        foreach ($progress as $userBonus) {
+            $stmt->bindValue($position++, $userBonus->id, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $userBonus->userID, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $userBonus->loginBonusID, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $userBonus->lastRewardSequence, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $userBonus->loopCount, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $userBonus->createdAt, PDO::PARAM_INT);
+            $stmt->bindValue($position++, $userBonus->updatedAt, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        if ($rewards) {
+            $coinAmount = 0;
+            $cardIDs = [];
+            $item45s = [];
+            foreach ($rewards as $reward) {
+                switch ($reward->itemType) {
+                    case 1: // coin
+                        $coinAmount += $reward->amount;
+                    break;
+                    case 2: // card
+                        $cardIDs[] = $reward->itemID;
+                    break;
+                    default:
+                        $item45s[] = [
+                            'itemId' => $reward->itemID,
+                            'obtainAmount' => $reward->amount,
+                        ];
+                }
+                $this->obtainCoin($userID, $coinAmount);
+                $this->obtainCards($userID, $requestAt, $cardIDs);
+                $this->obtain45Items($userID, $requestAt, $item45s);
             }
-
-            $sendLoginBonuses[] = $userBonus;
         }
 
         return $sendLoginBonuses;
