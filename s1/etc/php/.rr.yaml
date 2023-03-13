@@ -28,5 +28,5 @@ kv:
     config:
       interval: 60
 logs:
-  level: panic
+  level: debug
   mode: production

@@ -30,6 +30,7 @@ final class AdminHandler
         private readonly MasterCache $masterCache,
         private readonly Logger $logger,
         private readonly BanChecker $banChecker,
+        private readonly MasterVersionStore $masterVersionStore,
     ) {
     }
 
@@ -334,11 +335,13 @@ final class AdminHandler
         foreach ($responses as $adminResponse) {
             $json = $adminResponse->getContent();
         }
+        $versionMaster = new VersionMaster(...json_decode($json, true)['versionMaster']);
 
+        $this->masterVersionStore->setMasterVersion($versionMaster->masterVersion);
         $this->masterCache->shouldRecache($this->databaseManager->adminDatabase());
 
         return $this->successResponse($response, new AdminUpdateMasterResponse(
-            versionMaster: new VersionMaster(...json_decode($json, true)['versionMaster']),
+            versionMaster: $versionMaster,
         ));
     }
 

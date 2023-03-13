@@ -29,19 +29,19 @@ class MasterCache
     private readonly PhpFilesAdapter $cache;
 
     public function __construct(
+        private readonly MasterVersionStore $masterVersionStore,
     ) {
         $this->cache = new PhpFilesAdapter();
     }
 
     public function shouldRecache(PDO $db): string
     {
-        $stmt = $db->query('SELECT master_version FROM version_masters WHERE status = 1');
-        $row = $stmt->fetch();
+        $currentMasterVersion = $this->masterVersionStore->getMasterVersion();
         $cached = $this->cache->getItem('master_version');
-        if (!$cached->isHit() or $row['master_version'] !== $cached->get()) {
-            $this->recacheDisk($db, $row['master_version']);
+        if (!$cached->isHit() or $currentMasterVersion !== $cached->get()) {
+            $this->recacheDisk($db, $currentMasterVersion);
         }
-        if ($this->master_version !== $row['master_version']) {
+        if ($this->master_version !== $currentMasterVersion) {
             $this->itemMastersCache = [];
             $this->loginBonusMastersCache = [];
             $this->gachaMastersCache = [];
@@ -51,9 +51,9 @@ class MasterCache
             $this->gachaItemMasterItemCache = [];
             $this->presentAllMasterItemCache = [];
             $this->loginBonusRewardMastersItemCache = [];
-            $this->master_version = $row['master_version'];
+            $this->master_version = $currentMasterVersion;
         }
-        return $row['master_version'];
+        return $currentMasterVersion;
     }
 
     public function recacheDisk(PDO $db, string $master_version)

@@ -13,8 +13,8 @@ return function (ContainerBuilder $containerBuilder) {
     $containerBuilder->addDefinitions([
         SettingsInterface::class => function () {
             return new Settings([
-                'logError'            => false,
-                'logErrorDetails'     => false,
+                'logError'            => true,
+                'logErrorDetails'     => true,
                 'logger' => [
                     'name' => 'isu-con  quest',
                     'path' => 'php://stderr',
