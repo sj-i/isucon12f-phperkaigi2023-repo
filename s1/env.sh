@@ -2,3 +2,6 @@ ISUCON_SNOWFLAKE_NODE_ID=1
 ISUCON_DB_HOST=172.31.1.118
 ISUCON_REDIS_HOST=/var/run/redis/redis-server.sock
 ISUCON_REDIS_PORT=-1
+
+GODEBUG=cgocheck=0,invalidptr=0
+GOGC=2000
